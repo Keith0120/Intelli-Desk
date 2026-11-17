@@ -167,7 +167,17 @@ table.t{width:100%;border-collapse:collapse}
 .kv span{display:block;font-size:11.5px;color:var(--muted)}.kv b{display:block;font-weight:500;font-size:14px;color:var(--ink-2);margin-top:4px}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:300px;height:88px;border:1.5px dashed #cbd5e1;border-radius:12px;
   color:var(--body);font-size:12.5px;cursor:pointer;text-align:center;background:rgba(255,255,255,.6)}
-.drop:hover{border-color:#a5b4fc;background:#f8faff}
+.drop:hover,.drop:focus-visible,.drop.over{border-color:#a5b4fc;background:#f8faff;outline:none}
+.drop.busy{opacity:.6;pointer-events:none}
+.atts{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.att{width:148px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;text-decoration:none;color:inherit;box-shadow:var(--field-shadow)}
+.att:hover{border-color:#a5b4fc}
+.att img{display:block;width:100%;height:92px;object-fit:cover;background:#f1f5f9}
+.att div{padding:8px 10px}.att b{display:block;font-size:12px;font-weight:500;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att span{font-size:11px;color:var(--muted)}
+.pending{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.pending span{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 12px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;color:var(--body)}
+.pending button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px}
 .faq{display:grid;grid-template-columns:1fr 1fr;gap:20px 34px}
 .faq .card{padding:20px 22px;min-height:142px}.faq h3{font-size:14.5px;font-weight:700}.faq p{font-size:12.5px;color:var(--body);margin-top:14px}
 .cats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:30px}
@@ -249,6 +259,36 @@ function download(name,rows){
 function exportTickets(t){
   download('intellidesk-tickets.csv',[['Ticket','Title','Status','Priority','Category','Employee','Technician','Created','Due','Resolved'],
     ...t.map(x=>[x.id,x.title,STATUS[x.status],x.priority.name,x.category.name,x.submitter.name,x.assignee?.name||'',x.createdAt,x.dueAt,x.resolvedAt||''])])
+}
+
+/* ── Attachments (JPEG/PNG up to 10 MB) ────────────────────────────────── */
+const MAX_FILE=10*1024*1024,FILE_TYPES=['image/png','image/jpeg'];
+const fSize=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1)+' MB';
+const fileProblem=f=>!FILE_TYPES.includes(f.type)?`${f.name} is not a JPEG or PNG image.`:f.size>MAX_FILE?`${f.name} is larger than 10 MB.`:'';
+async function uploadFile(ticketId,f){
+  const fd=new FormData();fd.append('file',f);
+  const r=await fetch(`/api/tickets/${ticketId}/attachments`,{method:'POST',body:fd});
+  if(!r.ok){let e='';try{e=(await r.json()).message}catch{}throw new Error(`${f.name}: ${e||r.statusText}`)}
+  return r.json()
+}
+const dropZone=id=>`<label class="drop" id="${id}" tabindex="0" role="button" aria-label="Upload screenshots"><span style="font-size:18px" aria-hidden="true">⇪</span><span data-msg>Drag &amp; drop or click to upload<br>JPEG/JPG or PNG or up to 10MB</span><input type="file" accept="image/png,image/jpeg" multiple hidden></label>`;
+function bindDrop(id,onFiles){
+  const z=$('#'+id),inp=z.querySelector('input');
+  inp.onchange=()=>{onFiles([...inp.files]);inp.value=''};
+  z.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inp.click()}};
+  z.ondragover=e=>{e.preventDefault();z.classList.add('over')};z.ondragleave=()=>z.classList.remove('over');
+  z.ondrop=e=>{e.preventDefault();z.classList.remove('over');onFiles([...e.dataTransfer.files])}
+}
+const attList=a=>a.length?`<div class="atts">${a.map(x=>`<a class="att" href="/api/attachments/${x.id}" target="_blank" rel="noopener" title="Open ${esc(x.fileName)}"><img src="/api/attachments/${x.id}" alt="${esc(x.fileName)}" loading="lazy"><div><b>${esc(x.fileName)}</b><span>${fSize(x.sizeBytes)} · ${esc(x.uploadedBy.id===me.id?'You':x.uploadedBy.name)}</span></div></a>`).join('')}</div>`:'<p class="muted" style="font-size:12.5px;margin-bottom:12px">No screenshots attached yet.</p>';
+/* Upload box on a ticket page: uploads straight away, then reloads the ticket */
+function bindTicketDrop(t,from){
+  if(!$('#tdrop'))return;
+  bindDrop('tdrop',async files=>{
+    const bad=files.map(fileProblem).filter(Boolean);if(bad.length)return toast(bad.join(' '));
+    const z=$('#tdrop');z.classList.add('busy');z.querySelector('[data-msg]').textContent=`Uploading ${files.length} file${files.length>1?'s':''}…`;
+    try{for(const f of files)await uploadFile(t.id,f);toast(files.length>1?'Screenshots attached.':'Screenshot attached.')}catch(e){toast(e.message)}
+    go('ticket',{id:t.id,from})
+  })
 }
 
 /* ── Authentication ─────────────────────────────────────────────────────── */
@@ -380,22 +420,25 @@ function newTicket(){
       <div class="field"><span>Priority</span><div class="input md" style="display:flex;align-items:center;color:var(--muted);background:#f8fafc" aria-label="Priority is set by IT support">Set by IT support after review</div></div></div>
     <label class="field"><span>Description</span><textarea class="input" id="d" placeholder="Describe the problem and what you have already tried." maxlength="4000"></textarea></label>
     <div class="field" style="margin-bottom:16px"><span>Attachments (Optional)</span>
-      <label class="drop" id="drop"><span style="font-size:18px">⇪</span>Drag &amp; drop or click to upload<br>JPEG/JPG or PNG or up to 10MB<input type="file" id="file" accept="image/png,image/jpeg" multiple hidden></label>
-      <p class="muted" id="files" style="font-size:12px;margin-top:8px"></p></div>
+      ${dropZone('drop')}<div class="pending" id="files"></div></div>
     <p class="err" id="err" role="alert"></p>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span class="muted" style="font-size:11.5px">Required fields: Title, Category, Description</span><button class="btn" id="go">Submit Ticket</button></div>
   </form>
   <div class="card pad" style="padding:20px 18px 40px"><h2 style="font-size:15px;margin-bottom:14px">How it works</h2>
     <p class="muted" style="font-size:12.5px;line-height:1.35">1. Submit ticket<br>2. Technician reviews it<br>3. Status is updated<br>4. Ticket is resolved</p></div></div>`);
-  const show=fs=>{$('#files').textContent=fs.length?`${[...fs].map(f=>f.name).join(', ')} — attachments are not saved yet (the server has no upload support).`:''};
-  $('#file').onchange=e=>show(e.target.files);
-  $('#drop').ondragover=e=>e.preventDefault();$('#drop').ondrop=e=>{e.preventDefault();show(e.dataTransfer.files)};
+  let files=[];
+  const show=()=>{$('#files').innerHTML=files.map((f,i)=>`<span>${esc(f.name)} · ${fSize(f.size)}<button type="button" data-drop-i="${i}" aria-label="Take off ${esc(f.name)}">×</button></span>`).join('');
+    $$('[data-drop-i]').forEach(b=>b.onclick=()=>{files.splice(+b.dataset.dropI,1);show()})};
+  bindDrop('drop',fs=>{const bad=fs.map(fileProblem).filter(Boolean);if(bad.length)toast(bad.join(' '));files.push(...fs.filter(f=>!fileProblem(f)));show()});
   $('#f').onsubmit=async e=>{
     e.preventDefault();const title=$('#t').value.trim(),description=$('#d').value.trim();
     if(!title||!description){$('#err').textContent='Title and description are required.';return}
     $('#go').disabled=true;
-    try{const t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value});toast('Ticket submitted.');go('ticket',{id:t.id,from:'tickets'})}
-    catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
+    let t;
+    try{t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value})}catch(e){$('#err').textContent=e.message;$('#go').disabled=false;return}
+    const failed=[];for(const f of files){try{await uploadFile(t.id,f)}catch(e){failed.push(e.message)}}
+    toast(failed.length?`Ticket submitted, but some files were not attached: ${failed.join(' ')}`:'Ticket submitted.');
+    go('ticket',{id:t.id,from:'tickets'})
   }
 }
 const FAQS=[
@@ -451,10 +494,10 @@ async function assigned(){
 
 /* ── Ticket detail ──────────────────────────────────────────────────────── */
 async function ticket({id,from='tickets'}){
-  const [t,cm,h]=await Promise.all([api('/tickets/'+id),api(`/tickets/${id}/comments`),api(`/tickets/${id}/history`)]);
-  return me.role==='EMPLOYEE'?empTicket(t,cm,from):staffTicket(t,cm,h,from)
+  const [t,cm,h,at]=await Promise.all([api('/tickets/'+id),api(`/tickets/${id}/comments`),api(`/tickets/${id}/history`),api(`/tickets/${id}/attachments`)]);
+  return me.role==='EMPLOYEE'?empTicket(t,cm,at,from):staffTicket(t,cm,h,at,from)
 }
-function empTicket(t,cm,from){
+function empTicket(t,cm,at,from){
   const feed=[...cm.map(c=>({at:c.createdAt,who:c.author.id===me.id?'You':c.author.name,text:c.body})),
     {at:t.createdAt,who:'You',text:`Submitted ticket with category ${t.category.name}.`}].sort((a,b)=>d(b.at)-d(a.at));
   shell(from,`<button class="back" id="bk" style="margin:0 0 10px">← Tickets</button>
@@ -465,7 +508,8 @@ function empTicket(t,cm,from){
   <div class="card" style="padding:4px 22px 40px 6px">
     <h2 style="margin:6px 0 4px">Description</h2><p style="color:var(--body);white-space:pre-wrap;padding-bottom:36px;border-bottom:1px solid var(--line-2)">${esc(t.description)}</p>
     ${t.resolutionNotes?`<h2 style="margin:18px 0 4px">Resolution</h2><p style="color:var(--body);white-space:pre-wrap">${esc(t.resolutionNotes)}</p>`:''}
-    <h2 style="margin:22px 0 14px">Activity</h2>
+    <h2 style="margin:22px 0 12px">Attachments</h2>${attList(at)}${t.status!=='RESOLVED'?dropZone('tdrop'):''}
+    <h2 style="margin:26px 0 14px">Activity</h2>
     <div class="feed">${feed.map(f=>`<div class="it"><span class="dot"></span><div><div class="who2">${esc(f.who)} &nbsp;•&nbsp; ${fWhen(f.at)}</div><p>${esc(f.text)}</p></div></div>`).join('')}</div>
     ${t.status!=='RESOLVED'?`<form class="inbox" id="cf" style="margin-top:24px"><input class="input" id="cb" placeholder="Add a comment or update..." aria-label="Add a comment"><span class="kbd">⌘ ↵</span></form>
     <p class="faint" style="font-size:11px;margin-top:8px">Comments are visible to the assigned technician.</p>`:''}
@@ -477,7 +521,7 @@ function empTicket(t,cm,from){
     <div class="pr"><span>Assignee</span><b>${esc(t.assignee?.name||'Unassigned')}</b></div>
     <div class="pr"><span>Created</span><b>${fDateY(t.createdAt)}</b></div>
     <button class="btn ghost sm" id="bt" style="width:100%;margin-top:8px">Back to tickets</button></div></div>`);
-  $('#bk').onclick=$('#bt').onclick=()=>go(from);
+  $('#bk').onclick=$('#bt').onclick=()=>go(from);bindTicketDrop(t,from);
   if($('#cf'))$('#cf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#cb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:'PUBLIC'});go('ticket',{id:t.id,from})})
 }
 function histText(x){
@@ -486,10 +530,11 @@ function histText(x){
   if(x.field==='status')return `${who} moved ticket to ${STATUS[x.newValue]||x.newValue}`;
   if(x.field==='assignee')return `${who} assigned ${x.newValue}`;
   if(x.field==='escalated')return `${who} escalated: ${x.newValue}`;
+  if(x.field==='attachment')return `${who} attached ${x.newValue}`;
   if(x.field==='priority')return `${who} changed priority from ${x.oldValue} to ${x.newValue}`;
   return `${who} changed ${x.field}`
 }
-async function staffTicket(t,cm,h,from){
+async function staffTicket(t,cm,h,at,from){
   const admin=me.role==='ADMIN',open=t.status!=='RESOLVED',canWork=open&&(admin||t.assignee?.id===me.id);
   const techs=admin&&open?await api('/technicians'):[];
   const events=[...h.map(x=>({at:x.changedAt,text:histText(x)})).filter(x=>x.text),
@@ -505,6 +550,7 @@ async function staffTicket(t,cm,h,from){
       <div class="kv"><div><span>Submitted by</span><b>${esc(t.submitter.name)}</b></div><div><span>Category</span><b>${esc(t.category.name)}</b></div>
       <div><span>Created</span><b>${fDateY(t.createdAt)} · ${fTime(t.createdAt)}</b></div><div><span>SLA</span><b style="font-weight:700">${sla(t)}</b></div></div>
       <p style="font-size:12px;font-weight:700;margin-top:16px">Employee description</p><p style="color:var(--body);margin-top:6px;white-space:pre-wrap">${esc(t.description)}</p>
+      <p style="font-size:12px;font-weight:700;margin:18px 0 10px">Attachments</p>${attList(at)}${open?dropZone('tdrop'):''}
       ${t.escalationReason?`<p style="font-size:12px;font-weight:700;margin-top:16px">Escalated by ${esc(t.escalatedBy?.name||'')}</p><p style="color:#c2410c;margin-top:6px">${esc(t.escalationReason)}</p>`:''}</div>
     <div class="card pad" style="padding:20px 18px 22px"><h2 style="margin-left:38px">Resolution Notes</h2>
       <p class="sub" style="margin:4px 0 14px 38px">${open?'Document the fix or troubleshooting performed before resolving the ticket.':`Resolved ${fDateY(t.resolvedAt)} · ${fTime(t.resolvedAt)}`}</p>
@@ -529,7 +575,7 @@ async function staffTicket(t,cm,h,from){
       <form id="nf" style="margin-top:14px"><div class="inbox"><textarea class="input" id="nb" placeholder="Add internal note..." style="min-height:40px;height:40px;padding:10px 60px 10px 10px" aria-label="Add a note"></textarea><span class="kbd" style="top:auto;bottom:10px">⌘ ↵</span></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><label style="font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center"><input type="checkbox" id="pub"> Visible to employee</label><button class="btn sm" style="height:28px;font-size:12px">Post note</button></div></form></div>
   </div></div>`);
-  const reload=()=>go('ticket',{id:t.id,from});
+  const reload=()=>go('ticket',{id:t.id,from});bindTicketDrop(t,from);
   $('#nf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#nb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:$('#pub').checked?'PUBLIC':'INTERNAL'});reload()});
   $('#nb').onkeydown=e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))$('#nf').requestSubmit()};
   if(!canWork)return;
