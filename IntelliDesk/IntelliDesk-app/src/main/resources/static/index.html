@@ -1,182 +1,652 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IntelliDesk</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IntelliDesk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--p:#4f46e5;--bg:#f8fafc;--t:#0f172a;--m:#64748b;--b:#e2e8f0}
-*{box-sizing:border-box}body{margin:0;font:15px Inter,system-ui,sans-serif;background:var(--bg);color:var(--t)}
-aside{position:fixed;inset:0 auto 0 0;width:210px;padding:20px 14px;background:#fff;border-right:1px solid var(--b)}
-aside a{display:block;padding:10px 12px;margin:4px 0;border-radius:10px;color:var(--m);cursor:pointer}aside a:hover{background:#eef2ff;color:var(--t)}
-main{margin-left:210px;padding:24px 32px;max-width:1100px}header{text-align:right;color:var(--m);margin-bottom:8px}h1{margin:.2em 0 .6em}
-.card{background:#fff;border:1px solid var(--b);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 4px 14px #0f172a0d}
-.grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}.stats{display:flex;gap:14px;flex-wrap:wrap}.stats .card{min-width:150px}.stats b{font-size:28px;display:block}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--b)}tr[data-id]{cursor:pointer}tr[data-id]:hover{background:#f1f5f9}
-input,select,textarea{width:100%;padding:10px;margin:4px 0 12px;border:1px solid var(--b);border-radius:10px;font:inherit}input[type=checkbox]{width:auto}
-button{padding:10px 18px;border:0;border-radius:10px;background:linear-gradient(90deg,#4f46e5,#7c3aed);color:#fff;font-weight:600;cursor:pointer}button.ghost{background:#fff;color:var(--t);border:1px solid var(--b)}
-.pill{display:inline-block;padding:2px 10px;border-radius:99px;border:1px solid var(--b);font-size:12px;font-weight:600;background:#f8fafc}
-.IN_PROGRESS,.Medium{background:#eef2ff;color:#4338ca}.PENDING{background:#fff7ed;color:#c2410c}.RESOLVED{background:#ecfdf5;color:#047857}.High{background:#fef2f2;color:#b91c1c}
-.m{color:var(--m)}.err{color:#b91c1c;min-height:1.2em}.note{background:#f8fafc;border-radius:10px;padding:10px;margin:8px 0}
-.auth{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#4338ca,#2563eb)}.auth .card{width:min(420px,92vw);padding:28px}
-</style></head><body><div id="app"></div><script>
-const $=s=>document.querySelector(s),app=$('#app');let me=null,cats=[],prios=[];
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fmt=d=>d?new Date(d).toLocaleString():'',pill=s=>`<span class="pill ${esc(s)}">${esc(String(s).replace(/_/g,' '))}</span>`;
-const opts=a=>a.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+/* ── Design tokens (from the IntelliDesk V2 Figma file) ─────────────────── */
+:root{
+  --bg:#f8fafc; --ink:#111827; --ink-2:#1f2937; --body:#475569; --muted:#64748b; --faint:#94a3b8;
+  --line:#e5e7eb; --line-2:#eef0f4; --field:#d8dee9; --white:rgba(255,255,255,.98);
+  --brand:#4f46e5; --brand-soft:#eef2ff; --violet:#6d28d9;
+  --grad:linear-gradient(90deg,#4f46e5 0%,#6d28d9 52%,#7c3aed 100%);
+  --btn-shadow:0 10px 24px rgba(109,40,217,.28);
+  --card-shadow:0 14px 34px rgba(15,23,42,.08);
+  --field-shadow:0 4px 12px rgba(15,23,42,.06);
+  --r-card:16px; --r-field:12px;
+  --side:224px; --top:64px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font:14px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+a{color:inherit}
 
-// Valid next-status transitions matching the server-side NEXT map
-const NEXT_STATUS = {OPEN:['IN_PROGRESS'], IN_PROGRESS:['PENDING'], PENDING:['IN_PROGRESS'], RESOLVED:[]};
-const STATUS_LABELS = {IN_PROGRESS:'In Progress', PENDING:'Pending'};
+/* ── Buttons, fields, pills ─────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:42px;padding:0 22px;border:0;border-radius:var(--r-field);
+  background:var(--grad);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:var(--btn-shadow);white-space:nowrap}
+.btn:hover{filter:brightness(1.06)}.btn:disabled{opacity:.55;cursor:not-allowed;filter:none}
+.btn.lg{height:52px;width:100%}
+.btn.sm{height:32px;padding:0 16px;font-size:13px;border-radius:10px}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--field);box-shadow:0 2px 6px rgba(15,23,42,.05);font-weight:600}
+.btn.ghost:hover{background:#f8fafc}
+.btn.danger{background:#fff;color:#b91c1c;border:1px solid #fecaca;box-shadow:none;font-weight:600}
+.field{display:block;margin-bottom:22px}
+.field>span{display:block;font-size:13px;font-weight:500;color:var(--body);margin-bottom:9px}
+.input,select.input,textarea.input{display:block;width:100%;height:54px;padding:0 16px;border:1px solid var(--field);border-radius:var(--r-field);
+  background:var(--white);box-shadow:var(--field-shadow);color:var(--ink-2);outline:none;font-size:14px}
+textarea.input{height:auto;min-height:92px;padding:14px 16px;resize:vertical;line-height:1.5}
+.input::placeholder{color:var(--muted)}
+.input:focus{border-color:#a5b4fc;box-shadow:0 0 0 4px rgba(99,102,241,.12)}
+select.input{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 22px) 50%,calc(100% - 16px) 50%;background-size:6px 6px;background-repeat:no-repeat;padding-right:40px}
+.input.md{height:44px}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:#fff;
+  font-size:11.5px;font-weight:600;color:var(--body);white-space:nowrap}
+.pill.wide{min-width:96px;justify-content:center}
+.s-OPEN{background:#fff;color:#334155;border-color:#e2e8f0}
+.s-IN_PROGRESS{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
+.s-PENDING{background:#fff7ed;color:#c2410c;border-color:#fed7aa}
+.s-RESOLVED,.s-ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.s-off{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}
+.p-Low{background:#fff;color:#475569;border-color:#e2e8f0}
+.p-Medium{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+.p-High{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#cbd5e1;flex:none}
+.d-OPEN{background:#f59e0b}.d-IN_PROGRESS{background:#4f46e5}.d-PENDING{background:#f97316}.d-RESOLVED{background:#10b981}
+.muted{color:var(--muted)}.faint{color:var(--faint)}.err{color:#b91c1c;font-size:13px;min-height:18px}
+
+/* ── Authentication screens ─────────────────────────────────────────────── */
+.auth{display:grid;grid-template-columns:1fr 1fr;min-height:100vh}
+.auth-left{display:grid;place-items:center;padding:48px 24px}
+.auth-card{width:min(480px,100%);background:var(--white);border:1px solid rgba(229,231,235,.9);border-radius:24px;
+  box-shadow:0 18px 42px rgba(15,23,42,.1);padding:44px 40px 40px}
+.auth-card h1{font-size:36px;font-weight:700;letter-spacing:-.04em;line-height:1.2}
+.auth-card .lead{color:var(--muted);font-size:14px;margin:8px 0 42px}
+.auth-card .hint{font-size:12px;color:var(--muted);margin:-2px 0 20px}
+.demo{text-align:center;margin-top:36px}
+.demo b{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:12px}
+.demo p{font-size:11px;color:var(--faint);margin-bottom:9px}
+.brand{position:relative;overflow:hidden;display:grid;place-items:center;padding:40px;
+  background:linear-gradient(118deg,#312e81 12.9%,#4f46e5 47.1%,#2563eb 84.3%)}
+.orb{position:absolute;pointer-events:none}.orb img{position:absolute;display:block;max-width:none}
+.glass{position:relative;width:min(515px,100%);min-height:330px;padding:48px 40px;border-radius:24px;background:rgba(255,255,255,.13);
+  border:1px solid rgba(255,255,255,.22);box-shadow:0 20px 48px rgba(17,24,39,.2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:#fff}
+.glass h2{font-size:40px;font-weight:700;letter-spacing:-.04em;line-height:1.2}
+.glass h3{font-size:22px;font-weight:500;letter-spacing:-.04em;color:rgba(255,255,255,.96);margin-top:12px}
+.glass p{font-size:16px;color:rgba(255,255,255,.82);margin-top:28px;max-width:420px}
+.secinfo{background:#f8fafc;border:1px solid var(--line);border-radius:var(--r-field);padding:14px 16px;margin-bottom:34px;box-shadow:var(--field-shadow)}
+.secinfo b{display:block;font-weight:500;font-size:13px;color:var(--body)}.secinfo span{font-size:12px;color:var(--muted)}
+.code{text-align:center;font-size:22px;letter-spacing:.55em;font-weight:500;height:60px;padding-left:.55em}
+.authlinks{text-align:center;font-size:12px;color:var(--muted);margin-top:34px}
+.link{background:none;border:0;padding:0;color:var(--brand);font-weight:500;cursor:pointer;font-size:12px}
+.back{display:inline-block;margin-top:38px;background:none;border:0;padding:0;font-size:12px;color:var(--muted);cursor:pointer}
+
+/* ── App shell ──────────────────────────────────────────────────────────── */
+.side{position:fixed;inset:0 auto 0 0;width:var(--side);display:flex;flex-direction:column;padding:22px 16px 26px;background:rgba(255,255,255,.9);
+  border-right:1px solid var(--line-2);z-index:5}
+.side .logo{font-size:20px;font-weight:700;letter-spacing:-.03em;padding:0 8px}
+.chip{display:inline-block;margin:8px 8px 0;padding:3px 10px;border-radius:999px;border:1px solid #dbe2ef;background:#f1f5fb;font-size:11.5px;color:var(--body);width:max-content}
+.nav{margin-top:28px;display:flex;flex-direction:column;gap:6px}
+.nav button{display:flex;align-items:center;gap:14px;height:40px;padding:0 16px;border:0;border-radius:10px;background:none;color:var(--body);font-size:14px;cursor:pointer;text-align:left}
+.nav button .dot{width:6px;height:6px;background:#cbd5e1}
+.nav button:hover{background:#f5f7fb}
+.nav button.on{background:var(--brand-soft);color:var(--ink);font-weight:600}.nav button.on .dot{background:var(--brand)}
+.logout{margin-top:auto;background:none;border:0;text-align:left;padding:0 8px;color:var(--body);cursor:pointer;font-size:14px}
+.top{position:fixed;top:0;left:var(--side);right:0;height:var(--top);display:flex;align-items:center;gap:24px;padding:0 32px;
+  background:rgba(255,255,255,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line-2);z-index:4}
+.top .ws{font-weight:600;font-size:14px;min-width:180px}
+.search{position:absolute;left:50%;width:440px;margin-left:-220px}
+.search input{width:100%;height:38px;border:1px solid #dbe2ef;border-radius:12px;padding:0 64px 0 38px;background:#fff;font-size:13px;outline:none;box-shadow:0 2px 6px rgba(15,23,42,.04)}
+.search input:focus{border-color:#a5b4fc}
+.search .ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px}
+.kbd{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;border:1px solid var(--line);background:#f8fafc;font-size:11px;color:var(--body);font-weight:500}
+.search .kbd{position:absolute;right:8px;top:50%;transform:translateY(-50%)}
+.who{display:flex;align-items:center;gap:12px;margin-left:auto}
+.avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#eef2ff;font-size:10.5px;font-weight:700;color:var(--ink);flex:none}
+.who b{display:block;font-size:13px;font-weight:600}.who span{font-size:11px;color:var(--muted)}
+.main{margin-left:var(--side);padding:calc(var(--top) + 44px) 70px 60px 36px;min-height:100vh;position:relative;overflow:hidden}
+.main::before,.main::after{content:"";position:absolute;border-radius:50%;pointer-events:none;z-index:-1}
+.main::before{width:520px;height:420px;right:120px;top:-60px;background:radial-gradient(closest-side,rgba(191,219,254,.55),transparent)}
+.main::after{width:560px;height:560px;right:-160px;bottom:-200px;background:radial-gradient(closest-side,rgba(221,214,254,.6),transparent)}
+.wrap{max-width:1040px;position:relative}
+
+/* ── Page content ───────────────────────────────────────────────────────── */
+.ph{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:30px}
+.ph h1{font-size:32px;font-weight:700;letter-spacing:-.035em;line-height:1.2}
+.ph p{color:var(--muted);font-size:14px;margin-top:4px}
+.ph .acts{display:flex;gap:12px}
+.card{background:var(--white);border:1px solid rgba(229,231,235,.75);border-radius:var(--r-card);box-shadow:var(--card-shadow)}
+.pad{padding:24px}
+.card h2{font-size:18px;font-weight:700;letter-spacing:-.02em}
+.card .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,212px));gap:18px;margin-bottom:32px}
+.stats.four{grid-template-columns:repeat(4,1fr)}
+.stat{padding:18px 18px 16px;min-height:96px}
+.stat .l{font-size:12.5px;color:var(--body)}.stat .v{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.2;margin-top:4px}
+.stat .n{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-top:2px}
+.sec{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:0 0 18px}
+.headrow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+table.t{width:100%;border-collapse:collapse}
+.t th{text-align:left;font-size:12px;font-weight:700;color:var(--ink);padding:12px 14px;background:rgba(248,250,252,.7)}
+.t td{padding:16px 14px;border-top:1px solid var(--line-2);font-size:13px;color:var(--body);vertical-align:middle}
+.t td.id{font-weight:700;color:var(--ink)}
+.t td.strong{color:var(--ink);font-weight:500}
+.t tr.click{cursor:pointer}.t tr.click:hover td{background:#f8faff}
+.empty{padding:40px 14px;text-align:center;color:var(--muted);font-size:13px}
+.list .row{display:flex;align-items:flex-start;gap:16px;padding:16px 0;border-top:1px solid var(--line-2);cursor:pointer}
+.list .row:hover{background:#f8faff}
+.list .row .dot{margin:20px 6px 0 2px}
+.list .row .num{width:44px;font-size:12px;color:var(--body);padding-top:2px}
+.list .row .tt{flex:1}.list .row .tt b{display:block;font-weight:500;color:var(--ink-2);font-size:14px}
+.list .row .tt span{font-size:12px;color:var(--muted)}
+.list .row .pill{margin-top:2px;margin-right:18px}
+.filters{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;margin-bottom:22px}
+.filters input{flex:1;border:0;outline:none;background:none;height:30px;font-size:14px}
+.filters select{appearance:none;-webkit-appearance:none;min-width:90px;text-align:center;height:28px;border:1px solid var(--line);border-radius:999px;background:#f8fafc;padding:0 14px;font-size:11.5px;font-weight:600;color:var(--body);cursor:pointer}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
+.grid2.wide{grid-template-columns:minmax(0,1fr) 216px;gap:22px}
+.props .pr{padding:12px 0;border-bottom:1px solid var(--line-2)}.props .pr:last-of-type{border-bottom:0}
+.props .pr span{display:block;font-size:11.5px;color:var(--muted)}.props .pr b{font-weight:500;font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px;margin-top:4px}
+.feed{display:flex;flex-direction:column;gap:8px}
+.feed .it{display:flex;gap:14px;padding:12px 4px;background:#fff;border-radius:8px}
+.feed .it .dot{margin-top:6px;background:#cbd5e1}.feed .it:first-child .dot{background:#111827}
+.feed .it .who2{font-size:12px;color:var(--body)}.feed .it p{font-size:13px;color:var(--body);margin-top:6px;white-space:pre-wrap}
+.tag{font-size:10.5px;font-weight:600;padding:1px 8px;border-radius:999px;background:#fff7ed;color:#c2410c;margin-left:6px}
+.inbox{position:relative}.inbox .input{height:46px;padding-right:70px}.inbox .kbd{position:absolute;right:12px;top:12px}
+.timeline{position:relative}.timeline .ev{display:flex;gap:12px;font-size:12px;color:var(--body);padding:4px 0}
+.timeline .ev time{width:56px;flex:none;color:var(--body)}.timeline .ev b{color:var(--ink);font-weight:600}
+.timeline .line{display:flex;gap:10px;padding:6px 0 6px 6px;margin-left:2px;border-left:0}
+.timeline .line .dot{background:var(--brand);margin-top:5px}
+.kv{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding-bottom:16px;border-bottom:1px solid var(--line-2)}
+.kv span{display:block;font-size:11.5px;color:var(--muted)}.kv b{display:block;font-weight:500;font-size:14px;color:var(--ink-2);margin-top:4px}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:300px;height:88px;border:1.5px dashed #cbd5e1;border-radius:12px;
+  color:var(--body);font-size:12.5px;cursor:pointer;text-align:center;background:rgba(255,255,255,.6)}
+.drop:hover{border-color:#a5b4fc;background:#f8faff}
+.faq{display:grid;grid-template-columns:1fr 1fr;gap:20px 34px}
+.faq .card{padding:20px 22px;min-height:142px}.faq h3{font-size:14.5px;font-weight:700}.faq p{font-size:12.5px;color:var(--body);margin-top:14px}
+.cats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:30px}
+.cats .card{padding:22px 18px;min-height:96px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.cats .card.on{border-color:#a5b4fc;box-shadow:0 0 0 3px rgba(99,102,241,.12),var(--card-shadow)}
+.cats h3{font-size:14.5px;font-weight:700}.cats span{display:block;font-size:12px;color:var(--muted);margin-top:12px}
+.art{display:flex;align-items:center;gap:16px;padding:12px 6px;border-top:1px solid var(--line-2)}
+.art:first-child{border-top:0}.art div{flex:1}.art b{font-weight:500;color:var(--ink)}.art span{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+.chart{display:flex;justify-content:space-between;gap:10px;padding:20px 10px 4px;max-width:420px}
+.bar{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:10px;color:var(--body)}
+.bar .track{position:relative;width:26px;height:110px;border-radius:7px;background:#e8ebf2;overflow:hidden}
+.bar .fill{position:absolute;left:0;right:0;bottom:0;border-radius:7px;background:#6366f1}
+.set{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line-2);font-size:13px;color:var(--body)}
+.set:first-of-type{border-top:0}.set small{display:block;font-size:11.5px;color:var(--muted)}
+.set .val{min-width:120px;height:36px;padding:0 12px;border:1px solid var(--field);border-radius:10px;display:flex;align-items:center;background:#fff;color:var(--ink-2)}
+.toggle{min-width:96px;justify-content:center;cursor:pointer}
+.callout{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 26px}
+.callout h3{font-size:15px;font-weight:700}.callout p{font-size:12.5px;color:var(--body);margin-top:6px}
+
+/* ── Modal & toast ──────────────────────────────────────────────────────── */
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.35);display:grid;place-items:center;z-index:20;padding:16px}
+.modal{width:min(480px,100%);padding:28px}
+.modal h2{margin-bottom:18px}
+.modal .acts{display:flex;justify-content:flex-end;gap:10px;margin-top:6px}
+.modal ol{padding-left:20px;color:var(--body);margin:0}.modal li{margin:6px 0}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:12px 18px;border-radius:12px;font-size:13px;z-index:30;box-shadow:var(--card-shadow);max-width:90vw}
+
+/* ── Smaller screens ────────────────────────────────────────────────────── */
+@media (max-width:1100px){.search{position:relative;left:auto;margin:0 auto;width:auto;flex:0 1 440px}.grid2,.grid2.wide{grid-template-columns:1fr}.stats.four,.cats{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:860px){
+  .auth{grid-template-columns:1fr}.brand{display:none}
+  .side{position:static;width:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 16px}
+  .side .chip{margin:0}.nav{flex-direction:row;flex-wrap:wrap;margin:0;width:100%}.logout{margin:0}
+  .top{position:static;flex-wrap:wrap;height:auto;padding:12px 16px;gap:12px}.top .ws{min-width:0}.search{flex:1 1 100%;order:3;width:auto}
+  .filters{flex-wrap:wrap}.filters input{flex:1 1 100%}
+  .main{margin:0;padding:24px 16px}.faq,.kv{grid-template-columns:1fr 1fr}.t{display:block;overflow-x:auto}.ph{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],app=$('#app');
+let me=null,cats=[],prios=[],pending=null,wantRole='EMPLOYEE';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const STATUS={OPEN:'Open',IN_PROGRESS:'In Progress',PENDING:'Pending',RESOLVED:'Resolved'};
+const NEXT_STATUS={OPEN:['IN_PROGRESS'],IN_PROGRESS:['PENDING'],PENDING:['IN_PROGRESS'],RESOLVED:[]}; // mirrors TicketService.NEXT
+const ROLE_LABEL={EMPLOYEE:'Employee',TECHNICIAN:'Technician',ADMIN:'Administrator'};
+const sPill=s=>`<span class="pill wide s-${esc(s)}">${esc(STATUS[s]||s)}</span>`;
+const pPill=p=>`<span class="pill p-${esc(p)}">${esc(p)}</span>`;
+const initials=n=>String(n||'?').split(/[\s.]+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+const d=x=>x?new Date(x):null;
+const sameDay=(a,b)=>a.toDateString()===b.toDateString();
+const fDate=x=>x?d(x).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+const fDateY=x=>x?d(x).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+const fTime=x=>x?d(x).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+const fWhen=x=>!x?'':sameDay(d(x),new Date())?'Today, '+fTime(x):fDate(x)+', '+fTime(x);
+function dur(ms){const m=Math.round(Math.abs(ms)/60000),h=Math.floor(m/60),dd=Math.floor(h/24);return dd?`${dd}d ${h%24}h`:h?`${h}h ${m%60}m`:`${m}m`}
+function sla(t){if(t.status==='RESOLVED')return d(t.resolvedAt)<=d(t.dueAt)?'Met':'Missed';const ms=d(t.dueAt)-Date.now();return ms>=0?'Due in '+dur(ms):'Overdue by '+dur(ms)}
 
 async function api(p,m='GET',b){
   const r=await fetch('/api'+p,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
   if(!r.ok){let e='';try{e=(await r.json()).message}catch{}throw new Error(e||r.statusText)}
   const t=await r.text();return t?JSON.parse(t):null
 }
-const run=f=>async()=>{try{await f()}catch(e){alert(e.message)}};
-
-function login(){
-  app.innerHTML=`<div class="auth"><div class="card"><h1>Sign In</h1><p class="m">Enter your username to access IntelliDesk.</p>
-<label>Username<input id="e" placeholder="e.g. james.carter" autocomplete="username"></label>
-<label>Password<input id="pw" type="password" autocomplete="current-password"></label>
-<p class="err" id="err"></p><button id="go">Sign In</button>
-<p class="m" style="margin-top:14px;font-size:13px">Demo accounts (password: <b>password</b>)<br>
-Employee: james.carter · priya.nair · daniel.okonkwo · sofia.reyes<br>
-Technician: marcus.webb · aisha.thornton · leo.yamamoto<br>
-Admin: admin</p></div></div>`;
-  $('#go').onclick=async()=>{try{const r=await api('/auth/login','POST',{username:$('#e').value,password:$('#pw').value});r.verified?start():verify(r.message)}catch(e){$('#err').textContent=e.message}}
+function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.append(el);setTimeout(()=>el.remove(),3600)}
+const safe=f=>async(...a)=>{try{await f(...a)}catch(e){toast(e.message)}};
+function modal(title,body,actions=''){
+  const ov=document.createElement('div');ov.className='ov';
+  ov.innerHTML=`<div class="card modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${body}<div class="acts"><button class="btn ghost sm" data-x>Cancel</button>${actions}</div></div>`;
+  const close=()=>ov.remove();ov.onclick=e=>{if(e.target===ov||e.target.hasAttribute('data-x'))close()};
+  document.body.append(ov);const f=ov.querySelector('input,textarea,select');if(f)f.focus();return{el:ov,close,q:s=>ov.querySelector(s)}
+}
+function download(name,rows){
+  const csv=rows.map(r=>r.map(v=>{v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=name;a.click();URL.revokeObjectURL(a.href)
+}
+function exportTickets(t){
+  download('intellidesk-tickets.csv',[['Ticket','Title','Status','Priority','Category','Employee','Technician','Created','Due','Resolved'],
+    ...t.map(x=>[x.id,x.title,STATUS[x.status],x.priority.name,x.category.name,x.submitter.name,x.assignee?.name||'',x.createdAt,x.dueAt,x.resolvedAt||''])])
 }
 
-function verify(msg){
-  app.innerHTML=`<div class="auth"><div class="card"><h1>Two-Factor Authentication</h1><p class="m">Enter the 6-digit code sent to your company email.</p><div class="note">${esc(msg)}</div>
-<label>Verification Code<input id="c" maxlength="6" inputmode="numeric"></label><p class="err" id="err"></p><button id="go">Verify &amp; Continue</button> <button class="ghost" id="bk">Back to sign in</button></div></div>`;
-  $('#bk').onclick=login;
-  $('#go').onclick=async()=>{try{await api('/auth/verify','POST',{code:$('#c').value});start()}catch(e){$('#err').textContent=e.message}}
+/* ── Authentication ─────────────────────────────────────────────────────── */
+const ORBS=[['blue',60,-100,430,22.09],['indigo',360,430,390,25.64],['purple',-120,530,360,26.39],['emerald',390,70,260,34.62]];
+function brand(sub){
+  return `<div class="brand" aria-hidden="true">${ORBS.map(([n,x,y,s,i])=>`<div class="orb" style="left:${x}px;top:${y}px;width:${s}px;height:${s}px"><img src="img/orb-${n}.svg" alt="" style="inset:-${i}%;width:${100+2*i}%;height:${100+2*i}%"></div>`).join('')}
+  <div class="glass"><h2>IntelliDesk</h2><h3>Simple IT Help Desk System</h3><p>${sub}</p></div></div>`
 }
-
+function login(msg=''){
+  me=null;
+  app.innerHTML=`<div class="auth"><div class="auth-left"><form class="auth-card" id="f" novalidate>
+  <h1>Sign In</h1><p class="lead">Choose your role and use your company account.</p>
+  <label class="field"><span>Email</span><input class="input" id="u" placeholder="james.carter" autocomplete="username" required></label>
+  <label class="field"><span>Password</span><input class="input" id="pw" type="password" placeholder="••••••••" autocomplete="current-password" required></label>
+  <label class="field"><span>Role</span><select class="input" id="role"><option value="EMPLOYEE">Employee</option><option value="TECHNICIAN">Technician</option><option value="ADMIN">Administrator</option></select></label>
+  <p class="hint">A verification code is required after sign in.</p>
+  <p class="err" id="err" role="alert">${esc(msg)}</p>
+  <button class="btn lg" id="go">Sign In</button>
+  <div class="demo"><b>Demo access for class project</b>
+    <p>Employee: james.carter</p><p>Technician: marcus.webb</p><p>Admin: admin</p><p>Password for all: password</p></div>
+  </form></div>${brand('One secure sign-in for employees, technicians, and administrators.')}</div>`;
+  $('#role').value=wantRole;
+  $('#f').onsubmit=async e=>{
+    e.preventDefault();const u=$('#u').value.trim(),pw=$('#pw').value;wantRole=$('#role').value;
+    if(!u||!pw){$('#err').textContent='Enter your email and password.';return}
+    $('#go').disabled=true;
+    try{const r=await api('/auth/login','POST',{username:u,password:pw});pending={username:u,password:pw};r.verified?start():verify()}
+    catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
+  }
+}
+function verify(){
+  app.innerHTML=`<div class="auth"><div class="auth-left"><form class="auth-card" id="f" novalidate>
+  <h1 style="font-size:28px;letter-spacing:-.03em">Two-Factor Authentication</h1>
+  <p class="lead" style="margin:18px 0 34px">Enter the 6-digit code sent to your company email.</p>
+  <div class="secinfo"><b>Code sent to ${esc(pending?.username)}</b><span>The code expires in 10 minutes.</span></div>
+  <label class="field" style="margin-bottom:12px"><span>Verification Code</span><input class="input code" id="c" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••"></label>
+  <p class="err" id="err" role="alert"></p>
+  <button class="btn lg" id="go" style="margin-top:8px">Verify &amp; Continue</button>
+  <p class="authlinks">Didn’t receive a code? &nbsp;&nbsp;&nbsp;&nbsp;<button type="button" class="link" id="rs">Resend code</button></p>
+  <button type="button" class="back" id="bk">← Back to sign in</button>
+  </form></div>${brand('Secure sign in with a simple second verification step.')}</div>`;
+  $('#bk').onclick=()=>login();
+  $('#c').oninput=e=>e.target.value=e.target.value.replace(/\D/g,'');
+  $('#rs').onclick=async()=>{try{await api('/auth/login','POST',pending);$('#err').textContent='';toast('A new code was sent.')}catch(e){$('#err').textContent=e.message}};
+  $('#f').onsubmit=async e=>{e.preventDefault();try{await api('/auth/verify','POST',{code:$('#c').value});start()}catch(e){$('#err').textContent=e.message}}
+}
 async function start(){
-  try{me=await api('/auth/me');[cats,prios]=await Promise.all([api('/categories'),api('/priorities')]);me.role==='ADMIN'?overview():tickets()}catch{login()}
+  try{me=await api('/auth/me')}catch{return login()}
+  if(pending&&me.role!==wantRole){
+    const role=ROLE_LABEL[me.role];await api('/auth/logout','POST').catch(()=>{});pending=null;wantRole=me.role;
+    return login(`This is ${/^[AEIOU]/.test(role)?'an':'a'} ${role} account. Choose “${role}” as the role and sign in again.`)
+  }
+  pending=null;[cats,prios]=await Promise.all([api('/categories'),api('/priorities')]);go('dash')
 }
 
-function shell(title,html){
-  const nav=me.role==='EMPLOYEE'
-    ?[['My Tickets',()=>tickets()],['New Ticket',newTicket]]
-    :me.role==='TECHNICIAN'
-      ?[['All Tickets',()=>tickets()],['Assigned to Me',()=>tickets(true)]]
-      :[['Overview',overview],['Tickets',()=>tickets()],['Users',users]];
-  app.innerHTML=`<aside><h2>IntelliDesk</h2>${nav.map((n,i)=>`<a data-i="${i}">${n[0]}</a>`).join('')}<a id="out">Logout</a></aside><main><header><b>${esc(me.name)}</b> · ${me.role}</header><h1>${title}</h1>${html}</main>`;
-  app.querySelectorAll('aside a[data-i]').forEach(a=>a.onclick=()=>nav[+a.dataset.i][1]());
-  $('#out').onclick=async()=>{if(!confirm('Are you sure you want to log out?'))return;await api('/auth/logout','POST');me=null;login()}
+/* ── App shell & routing ────────────────────────────────────────────────── */
+const ROLES={
+  EMPLOYEE:{ws:'Employee Workspace',chip:'IT Service',ph:'Search tickets, help, or commands',nav:[['dash','Dashboard'],['tickets','My Tickets'],['new','New Ticket'],['faq','FAQ']]},
+  TECHNICIAN:{ws:'Technician Workspace',chip:'Technician',ph:'Search tickets, users, or knowledge',nav:[['dash','Dashboard'],['tickets','All Tickets'],['mine','Assigned to Me'],['kb','Knowledge Base']]},
+  ADMIN:{ws:'Admin Console',chip:'Admin',ph:'Search tickets, users, or commands',nav:[['dash','Overview'],['tickets','Tickets'],['users','Users'],['techs','Technicians'],['kb','Knowledge Base'],['settings','Settings']]}
+};
+const PAGES={dash:()=>({EMPLOYEE:empDash,TECHNICIAN:techDash,ADMIN:adminDash})[me.role](),tickets:ticketList,new:newTicket,faq,mine:assigned,kb,users,techs,settings,ticket};
+let active='dash';
+function go(p,arg){window.scrollTo(0,0);safe(PAGES[p])(arg)}
+function shell(nav,html){
+  active=nav;const R=ROLES[me.role];
+  app.innerHTML=`<aside class="side"><div class="logo">IntelliDesk</div><span class="chip">${R.chip}</span>
+  <nav class="nav">${R.nav.map(([k,l])=>`<button data-go="${k}" class="${k===nav?'on':''}"><span class="dot"></span>${l}</button>`).join('')}</nav>
+  <button class="logout" id="out">Logout</button></aside>
+  <header class="top"><div class="ws">${R.ws}</div>
+  <div class="search"><span class="ic">⌕</span><input id="gs" placeholder="${R.ph}" aria-label="Search tickets"><span class="kbd">⌘ K</span></div>
+  <div class="who"><div class="avatar">${esc(initials(me.name))}</div><div><b>${esc(me.name)}</b><span>${ROLE_LABEL[me.role]}</span></div></div></header>
+  <main class="main"><div class="wrap">${html}</div></main>`;
+  $$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+  $('#gs').onkeydown=e=>{if(e.key==='Enter')go('tickets',{q:e.target.value.trim()})};
+  $('#out').onclick=()=>{const m=modal('Log out?','<p class="muted" style="margin-bottom:20px">You will need to sign in again to use IntelliDesk.</p>','<button class="btn sm" id="lo">Log out</button>');
+    m.q('#lo').onclick=async()=>{await api('/auth/logout','POST').catch(()=>{});m.close();login()}}
 }
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&$('#gs')){e.preventDefault();$('#gs').focus()}});
+const head=(t,p,acts='')=>`<div class="ph"><div><h1>${t}</h1><p>${p}</p></div>${acts?`<div class="acts">${acts}</div>`:''}</div>`;
+const stat=(l,v,note,dot)=>`<div class="card stat"><div class="l">${l}</div><div class="v">${v}</div>${note?`<div class="n">${dot!==undefined?`<span class="dot" style="background:${dot}"></span>`:''}${note}</div>`:''}</div>`;
+const rowsClick=()=>$$('[data-t]').forEach(r=>r.onclick=()=>go('ticket',{id:+r.dataset.t,from:active}));
 
-async function overview(){
-  const d=await api('/reports/dashboard');
-  const c=(l,v)=>`<div class="card"><span class="m">${l}</span><b>${v}</b></div>`;
-  shell('Admin Dashboard',`<div class="stats">${c('Total Tickets',d.total)}${c('Open',d.open)}${c('In Progress',d.inProgress)}${c('Pending',d.pending)}${c('Resolved',d.resolved)}${c('Technicians',d.technicians)}${c('Employees',d.employees)}</div>`)
+/* Generic ticket table: cols is a list of column keys */
+const COLS={
+  id:['Ticket',x=>`<td class="id">#${String(x.id).padStart(3,'0')}</td>`],
+  issue:['Issue',x=>`<td class="strong">${esc(x.title)}</td>`],
+  emp:['Employee',x=>`<td>${esc(x.submitter.name)}</td>`],
+  tech:['Technician',x=>`<td>${esc(x.assignee?.name||'Unassigned')}</td>`],
+  cat:['Category',x=>`<td>${esc(x.category.name)}</td>`],
+  created:['Created',x=>`<td>${fDate(x.createdAt)}</td>`],
+  prio:['Priority',x=>`<td>${pPill(x.priority.name)}</td>`],
+  status:['Status',x=>`<td>${sPill(x.status)}</td>`]
+};
+const ticketTable=(t,cols,empty='No tickets to show.')=>`<table class="t"><thead><tr>${cols.map(c=>`<th>${COLS[c][0]}</th>`).join('')}</tr></thead><tbody>${
+  t.length?t.map(x=>`<tr class="click" data-t="${x.id}" tabindex="0">${cols.map(c=>COLS[c][1](x)).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}" class="empty">${empty}</td></tr>`}</tbody></table>`;
+
+/* Search + filter bar used on list pages; calls draw() whenever anything changes */
+function filterBar(id,ph,selects){
+  return `<div class="card filters" id="${id}"><input placeholder="${ph}" data-f="q" aria-label="${ph}">${selects.map(([k,label,opts])=>
+    `<select data-f="${k}" aria-label="${label}"><option value="">${label}: All</option>${opts.map(([v,l])=>`<option value="${esc(v)}">${label}: ${esc(l)}</option>`).join('')}</select>`).join('')}</div>`
 }
-
-async function tickets(mine){
-  let t=await api('/tickets');
-  if(mine)t=t.filter(x=>x.assignee&&x.assignee.id===me.id);
-  shell(mine?'Assigned to Me':me.role==='EMPLOYEE'?'My Tickets':'Tickets',`<input id="q" placeholder="Search tickets..."><table id="tb"></table>`);
-  const draw=()=>{
-    const q=$('#q').value.toLowerCase();
-    $('#tb').innerHTML='<tr><th>#</th><th>Issue</th><th>Employee</th><th>Technician</th><th>Priority</th><th>Status</th></tr>'+
-      t.filter(x=>x.title.toLowerCase().includes(q)||String(x.id).includes(q))
-       .map(x=>`<tr data-id="${x.id}"><td>#${x.id}</td><td>${esc(x.title)}</td><td>${esc(x.submitter.name)}</td><td>${esc(x.assignee?.name||'Unassigned')}</td><td>${pill(x.priority.name)}</td><td>${pill(x.status)}</td></tr>`).join('');
-    $('#tb').querySelectorAll('tr[data-id]').forEach(r=>r.onclick=()=>detail(+r.dataset.id))
-  };
-  $('#q').oninput=draw;draw()
+function bindFilters(id,draw,init={}){
+  const vals=()=>Object.fromEntries($$(`#${id} [data-f]`).map(e=>[e.dataset.f,e.value.trim().toLowerCase()]));
+  $$(`#${id} [data-f]`).forEach(e=>{if(init[e.dataset.f])e.value=init[e.dataset.f];e.oninput=()=>draw(vals())});draw(vals())
 }
+const matchT=(x,f)=>(!f.q||`#${x.id} ${x.id} ${x.title} ${x.submitter.name} ${x.assignee?.name||''} ${x.category.name}`.toLowerCase().includes(f.q))
+  &&(!f.status||x.status.toLowerCase()===f.status)&&(!f.prio||x.priority.name.toLowerCase()===f.prio);
+const STATUS_OPTS=Object.entries(STATUS);
+const prioOpts=()=>prios.map(p=>[p.name.toLowerCase(),p.name]);
 
+/* ── Employee ───────────────────────────────────────────────────────────── */
+async function empDash(){
+  const t=await api('/tickets'),n=s=>t.filter(x=>x.status===s).length;
+  shell('dash',head('Employee Dashboard','Track support requests, see progress, and get help quickly.','<button class="btn" id="nt">+&nbsp; New Ticket</button>')+
+  `<div class="stats four">${stat('Open',n('OPEN'),'Awaiting review','#cbd5e1')}${stat('In Progress',n('IN_PROGRESS')+n('PENDING'),'Technician assigned','#4f46e5')}${stat('Resolved',n('RESOLVED'),'Completed tickets','#10b981')}${stat('Total',t.length,'All requests','#cbd5e1')}</div>
+  <div class="card pad"><div class="headrow"><div><h2>Recent tickets</h2><p class="sub">Latest activity across your requests</p></div><button class="btn ghost sm" id="va">View all tickets</button></div>
+  <div class="list">${t.slice(0,5).map(x=>`<div class="row" data-t="${x.id}" tabindex="0"><span class="dot d-${x.status}"></span><span class="num">#${String(x.id).padStart(3,'0')}</span>
+    <div class="tt"><b>${esc(x.title)}</b><span>${esc(x.category.name)} &nbsp;•&nbsp; ${fDate(x.createdAt)} &nbsp;•&nbsp; ${esc(x.assignee?.name||'Unassigned')}</span></div>${sPill(x.status)}</div>`).join('')
+    ||'<p class="empty">You have not submitted any tickets yet.</p>'}</div></div>`);
+  $('#nt').onclick=()=>go('new');$('#va').onclick=()=>go('tickets');rowsClick()
+}
 function newTicket(){
-  shell('Create Ticket',`<div class="card"><label>Title<input id="t"></label><label>Category<select id="c">${opts(cats)}</select></label><label>Priority<select id="p">${opts(prios)}</select></label>
-<label>Description<textarea id="d" rows="5"></textarea></label><p class="err" id="err"></p><button id="go">Submit Ticket</button></div>`);
-  $('#go').onclick=run(async()=>{
-    const title=$('#t').value.trim();
-    if(!title){$('#err').textContent='Title is required';return}
-    const t=await api('/tickets','POST',{title,description:$('#d').value,categoryId:+$('#c').value,priorityId:+$('#p').value});
-    detail(t.id)
-  })
+  shell('new',head('Create Ticket','Enter the issue details and submit the request.')+`<div class="grid2">
+  <form class="card pad" id="f" novalidate style="padding:24px 18px 30px"><h2 style="margin-bottom:22px">Ticket Information</h2>
+    <label class="field"><span>Title</span><input class="input md" id="t" placeholder="Wi-Fi connection problem" maxlength="200"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <label class="field"><span>Category</span><select class="input md" id="c">${cats.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Priority</span><select class="input md" id="p">${prios.map(p=>`<option value="${p.id}" ${p.name==='Medium'?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+    <label class="field"><span>Description</span><textarea class="input" id="d" placeholder="Describe the problem and what you have already tried." maxlength="4000"></textarea></label>
+    <div class="field" style="margin-bottom:16px"><span>Attachments (Optional)</span>
+      <label class="drop" id="drop"><span style="font-size:18px">⇪</span>Drag &amp; drop or click to upload<br>JPEG/JPG or PNG or up to 10MB<input type="file" id="file" accept="image/png,image/jpeg" multiple hidden></label>
+      <p class="muted" id="files" style="font-size:12px;margin-top:8px"></p></div>
+    <p class="err" id="err" role="alert"></p>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span class="muted" style="font-size:11.5px">Required fields: Title, Category, Priority, Description</span><button class="btn" id="go">Submit Ticket</button></div>
+  </form>
+  <div class="card pad" style="padding:20px 18px 40px"><h2 style="font-size:15px;margin-bottom:14px">How it works</h2>
+    <p class="muted" style="font-size:12.5px;line-height:1.35">1. Submit ticket<br>2. Technician reviews it<br>3. Status is updated<br>4. Ticket is resolved</p></div></div>`);
+  const show=fs=>{$('#files').textContent=fs.length?`${[...fs].map(f=>f.name).join(', ')} — attachments are not saved yet (the server has no upload support).`:''};
+  $('#file').onchange=e=>show(e.target.files);
+  $('#drop').ondragover=e=>e.preventDefault();$('#drop').ondrop=e=>{e.preventDefault();show(e.dataTransfer.files)};
+  $('#f').onsubmit=async e=>{
+    e.preventDefault();const title=$('#t').value.trim(),description=$('#d').value.trim();
+    if(!title||!description){$('#err').textContent='Title and description are required.';return}
+    $('#go').disabled=true;
+    try{const t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value,priorityId:+$('#p').value});toast('Ticket submitted.');go('ticket',{id:t.id,from:'tickets'})}
+    catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
+  }
+}
+const FAQS=[
+  ['How do I create a ticket?','Go to New Ticket, enter the issue details, choose a category and priority, then select Submit Ticket.'],
+  ['Which priority should I choose?','Use Low for minor issues, Medium for normal work problems, and High when the issue prevents you from working.'],
+  ['How do I check my ticket status?','Open My Tickets from the employee portal and select a ticket to view its current status and technician updates.'],
+  ['What do the ticket statuses mean?','Open means the request is waiting for review. In Progress means a technician is working on it. Resolved means the issue has been fixed and the ticket is finished.'],
+  ['What if I do not receive the 2FA code?','Wait a moment and select Resend Code. Make sure you can access your company email. If it still does not arrive, contact IT support.'],
+  ['What should I try before creating a ticket?','Restart the app or device, check your internet connection, and try the action again. If the problem continues, create a ticket.']];
+function faq(){
+  shell('faq',head('Frequently Asked Questions','Quick answers to common questions before you submit a support ticket.')+
+  `<div class="card filters" style="margin-bottom:22px"><input id="fq" placeholder="Search common questions..." aria-label="Search common questions"></div>
+  <div class="faq" id="fl"></div>
+  <div class="card callout" style="margin-top:22px"><div><h3>Still need help?</h3><p>Create a support ticket and a technician will review your issue.</p></div><button class="btn" id="ct">Create Ticket</button></div>`);
+  const draw=()=>{const q=$('#fq').value.toLowerCase(),r=FAQS.filter(f=>(f[0]+f[1]).toLowerCase().includes(q));
+    $('#fl').innerHTML=r.map(f=>`<div class="card"><h3>${f[0]}</h3><p>${f[1]}</p></div>`).join('')||'<p class="empty">No matching questions.</p>'};
+  $('#fq').oninput=draw;draw();$('#ct').onclick=()=>go('new')
 }
 
-async function detail(id){
-  const [t,cm,h]=await Promise.all([api('/tickets/'+id),api('/tickets/'+id+'/comments'),api('/tickets/'+id+'/history')]);
-  const staff=me.role!=='EMPLOYEE',open=t.status!=='RESOLVED',admin=me.role==='ADMIN';
-  const techs=admin?await api('/technicians'):[];
+/* ── Ticket lists (all roles) ───────────────────────────────────────────── */
+async function ticketList(opt={}){
+  const t=await api('/tickets'),emp=me.role==='EMPLOYEE',n=s=>t.filter(x=>x.status===s).length;
+  const title=emp?'My Tickets':me.role==='ADMIN'?'Tickets':'All Tickets';
+  const sub=emp?'All of your support requests and their current status.':me.role==='ADMIN'?'Manage and review all support tickets.':'Every ticket in the service desk queue.';
+  const cols=emp?['id','issue','cat','tech','prio','status']:['id','issue','emp','tech','prio','status'];
+  shell('tickets',head(title,sub,emp?'<button class="btn" id="nt">+&nbsp; New Ticket</button>':'<button class="btn ghost" id="ex">Export</button>')+
+  `<div class="stats four">${stat('Total Tickets',t.length,emp?'All requests':'All support requests')}${stat('Open',n('OPEN'),'Waiting for review')}${stat('In Progress',n('IN_PROGRESS')+n('PENDING'),'Currently being worked')}${stat('Resolved',n('RESOLVED'),'Completed requests')}</div>
+  ${filterBar('tf','Search tickets...',[['status','Status',STATUS_OPTS],['prio','Priority',prioOpts()]])}
+  <div class="card pad"><h2>${emp?'Your tickets':'All tickets'}</h2><p class="sub" style="margin-bottom:16px">${emp?'Select a ticket to see updates':'Complete service desk queue'}</p><div id="tb"></div></div>`);
+  if($('#nt'))$('#nt').onclick=()=>go('new');
+  if($('#ex'))$('#ex').onclick=()=>exportTickets(t);
+  bindFilters('tf',f=>{$('#tb').innerHTML=ticketTable(t.filter(x=>matchT(x,f)),cols,'No tickets match your search.');rowsClick()},{q:opt.q?.toLowerCase()})
+}
 
-  // Build the valid next-status options for this ticket's current status
-  const nextStatuses=(NEXT_STATUS[t.status]||[]).filter(s=>s!=='RESOLVED');
-  const statusOpts=nextStatuses.map(s=>`<option value="${s}">${STATUS_LABELS[s]||s}</option>`).join('');
+/* ── Technician ─────────────────────────────────────────────────────────── */
+async function techDash(){
+  const t=await api('/tickets'),now=new Date(),n=s=>t.filter(x=>x.status===s).length;
+  const mine=t.filter(x=>x.assignee?.id===me.id&&x.status!=='RESOLVED');
+  shell('dash',head('Technician Dashboard','Review open support tickets and update their status.')+
+  `<div class="stats">${stat('Open Tickets',n('OPEN'))}${stat('In Progress',n('IN_PROGRESS'))}${stat('Resolved Today',t.filter(x=>x.resolvedAt&&sameDay(d(x.resolvedAt),now)).length)}</div>
+  <h2 class="sec">Assigned Tickets</h2><div class="card" style="padding:12px 14px 40px">${ticketTable(mine,['id','issue','emp','prio','status'],'No open tickets are assigned to you.')}</div>`);
+  rowsClick()
+}
+async function assigned(){
+  const t=(await api('/tickets')).filter(x=>x.assignee?.id===me.id),n=s=>t.filter(x=>x.status===s).length;
+  shell('mine',head('Assigned to Me',`Tickets currently assigned to ${esc(me.name)}.`)+
+  `<div class="stats">${stat('Assigned',t.filter(x=>x.status!=='RESOLVED').length)}${stat('In Progress',n('IN_PROGRESS'))}${stat('Pending',n('PENDING'))}</div>
+  ${filterBar('af','Search assigned tickets...',[['status','Status',STATUS_OPTS]])}
+  <div class="card pad" style="min-height:228px"><h2>Assigned tickets</h2><p class="sub" style="margin-bottom:16px">Your current support workload</p><div id="tb"></div></div>
+  <div class="card callout" style="margin-top:18px"><div><h3>Workload overview</h3><p>Open a ticket to update status, add resolution notes, or mark the issue as resolved.</p></div></div>`);
+  bindFilters('af',f=>{$('#tb').innerHTML=ticketTable(t.filter(x=>matchT(x,f)),['id','issue','emp','prio','status'],'No assigned tickets match.');rowsClick()})
+}
 
-  shell(`#${t.id} — ${esc(t.title)}`,`<div class="grid">
-  <div class="card">
-    <p>${pill(t.status)} ${pill(t.priority.name)}</p>
-    <p class="m">${esc(t.category.name)} · Submitted by ${esc(t.submitter.name)} · Assigned to ${esc(t.assignee?.name||'Unassigned')} · SLA due ${fmt(t.dueAt)}</p>
-    <p>${esc(t.description)}</p>
-    ${t.resolutionNotes?`<p><b>Resolution:</b> ${esc(t.resolutionNotes)}</p>`:''}
-    ${t.escalationReason?`<p><b>Escalated:</b> ${esc(t.escalationReason)}</p>`:''}
-    <h3>Activity</h3>
-    ${cm.map(c=>`<div class="note"><b>${esc(c.author.name)}</b> · ${fmt(c.createdAt)}${c.visibility==='INTERNAL'?' · <em>internal</em>':''}<br>${esc(c.body)}</div>`).join('')||'<p class="m">No comments yet.</p>'}
-    <textarea id="cb" rows="3" placeholder="Add a comment..."></textarea>
-    ${staff?'<label><input type="checkbox" id="int"> Internal note (staff only)</label>':''}
-    <button id="post">Post Comment</button>
+/* ── Ticket detail ──────────────────────────────────────────────────────── */
+async function ticket({id,from='tickets'}){
+  const [t,cm,h]=await Promise.all([api('/tickets/'+id),api(`/tickets/${id}/comments`),api(`/tickets/${id}/history`)]);
+  return me.role==='EMPLOYEE'?empTicket(t,cm,from):staffTicket(t,cm,h,from)
+}
+function empTicket(t,cm,from){
+  const feed=[...cm.map(c=>({at:c.createdAt,who:c.author.id===me.id?'You':c.author.name,text:c.body})),
+    {at:t.createdAt,who:'You',text:`Submitted ticket with category ${t.category.name} and ${t.priority.name.toLowerCase()} priority.`}].sort((a,b)=>d(b.at)-d(a.at));
+  shell(from,`<button class="back" id="bk" style="margin:0 0 10px">← Tickets</button>
+  <div class="ph" style="margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line)"><div><h1>${esc(t.title)}</h1>
+  <p style="font-size:12px">Ticket #${String(t.id).padStart(3,'0')} &nbsp;•&nbsp; ${esc(t.category.name)} &nbsp;•&nbsp; ${fDateY(t.createdAt)} &nbsp;•&nbsp; ${esc(t.assignee?.name||'Unassigned')}</p></div>
+  <div class="acts" style="gap:8px">${sPill(t.status)}<span class="pill wide p-${esc(t.priority.name)}"><span class="dot" style="background:currentColor;opacity:.5;width:5px;height:5px"></span>${esc(t.priority.name)}</span></div></div>
+  <div class="grid2" style="grid-template-columns:minmax(0,1fr) 182px;gap:26px">
+  <div class="card" style="padding:4px 22px 40px 6px">
+    <h2 style="margin:6px 0 4px">Description</h2><p style="color:var(--body);white-space:pre-wrap;padding-bottom:36px;border-bottom:1px solid var(--line-2)">${esc(t.description)}</p>
+    ${t.resolutionNotes?`<h2 style="margin:18px 0 4px">Resolution</h2><p style="color:var(--body);white-space:pre-wrap">${esc(t.resolutionNotes)}</p>`:''}
+    <h2 style="margin:22px 0 14px">Activity</h2>
+    <div class="feed">${feed.map(f=>`<div class="it"><span class="dot"></span><div><div class="who2">${esc(f.who)} &nbsp;•&nbsp; ${fWhen(f.at)}</div><p>${esc(f.text)}</p></div></div>`).join('')}</div>
+    ${t.status!=='RESOLVED'?`<form class="inbox" id="cf" style="margin-top:24px"><input class="input" id="cb" placeholder="Add a comment or update..." aria-label="Add a comment"><span class="kbd">⌘ ↵</span></form>
+    <p class="faint" style="font-size:11px;margin-top:8px">Comments are visible to the assigned technician.</p>`:''}
   </div>
-  <div>
-    ${staff&&open?`<div class="card"><h3>Workflow</h3>
-      ${statusOpts
-        ?`<label>Move to<select id="st">${statusOpts}</select></label><button id="sv">Save Status</button><hr>`
-        :`<p class="m">No status transitions available from ${t.status.replace('_',' ')}.</p>`}
-      ${admin&&techs.length?`<label>Assign technician<select id="tc">${opts(techs)}</select></label><button id="as" class="ghost">Assign</button><hr>`:''}
-      <label>Resolution notes<textarea id="rn" rows="3" placeholder="Required to resolve..."></textarea></label>
-      <button id="rs">Resolve Ticket</button>
-      <button id="es" class="ghost" style="margin-top:8px">Escalate</button>
-    </div>`:''}
-    <div class="card"><h3>History</h3>
-      ${h.length?h.map(x=>`<p class="m">${fmt(x.changedAt)} · <b>${esc(x.changedBy.name)}</b>: ${esc(x.field)} ${x.oldValue?esc(x.oldValue)+'→':''} ${esc(x.newValue??'')}</p>`).join(''):'<p class="m">No history yet.</p>'}
-    </div>
+  <div class="card props" style="padding:14px 16px 16px"><h2 style="font-size:15px;margin-bottom:6px">Properties</h2>
+    <div class="pr"><span>Status</span><b>${STATUS[t.status]}</b></div>
+    <div class="pr"><span>Priority</span><b><span class="dot"></span>${esc(t.priority.name)}</b></div>
+    <div class="pr"><span>Category</span><b>${esc(t.category.name)}</b></div>
+    <div class="pr"><span>Assignee</span><b>${esc(t.assignee?.name||'Unassigned')}</b></div>
+    <div class="pr"><span>Created</span><b>${fDateY(t.createdAt)}</b></div>
+    <button class="btn ghost sm" id="bt" style="width:100%;margin-top:8px">Back to tickets</button></div></div>`);
+  $('#bk').onclick=$('#bt').onclick=()=>go(from);
+  if($('#cf'))$('#cf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#cb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:'PUBLIC'});go('ticket',{id:t.id,from})})
+}
+function histText(x){
+  const who=x.changedBy.id===me.id?'You':x.changedBy.name.split(' ')[0];
+  if(x.field==='status'&&!x.oldValue)return null; // creation is shown as the first event
+  if(x.field==='status')return `${who} moved ticket to ${STATUS[x.newValue]||x.newValue}`;
+  if(x.field==='assignee')return `${who} assigned ${x.newValue}`;
+  if(x.field==='escalated')return `${who} escalated: ${x.newValue}`;
+  return `${who} changed ${x.field}`
+}
+async function staffTicket(t,cm,h,from){
+  const admin=me.role==='ADMIN',open=t.status!=='RESOLVED',canWork=open&&(admin||t.assignee?.id===me.id);
+  const techs=admin&&open?await api('/technicians'):[];
+  const events=[...h.map(x=>({at:x.changedAt,text:histText(x)})).filter(x=>x.text),
+    ...cm.map(c=>({at:c.createdAt,text:`${c.author.id===me.id?'You':c.author.name}${c.visibility==='INTERNAL'?' (internal)':''}: ${c.body}`}))].sort((a,b)=>d(a.at)-d(b.at));
+  const due=d(t.dueAt),dueTxt=sameDay(due,new Date())?fTime(t.dueAt):fDate(t.dueAt)+', '+fTime(t.dueAt);
+  const stOpts=[t.status,...(NEXT_STATUS[t.status]||[])];
+  shell(from,`<div class="ph"><div><h1>Ticket #${String(t.id).padStart(3,'0')}</h1>
+  <div style="display:flex;align-items:center;gap:18px;margin-top:2px"><p style="font-size:17px;color:var(--body);margin:0">${esc(t.title)}</p><span style="display:flex;gap:6px">${sPill(t.status)}${pPill(t.priority.name).replace('class="pill','class="pill wide')}</span></div></div>
+  ${canWork?'<div class="acts"><button class="btn ghost" id="es">Escalate</button><button class="btn" id="rs">Resolve Ticket</button></div>':''}</div>
+  <div class="grid2" style="grid-template-columns:minmax(0,1fr) 300px;gap:24px">
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <div class="card pad" style="padding:22px 18px"><h2 style="margin-bottom:18px">Request overview</h2>
+      <div class="kv"><div><span>Submitted by</span><b>${esc(t.submitter.name)}</b></div><div><span>Category</span><b>${esc(t.category.name)}</b></div>
+      <div><span>Created</span><b>${fDateY(t.createdAt)} · ${fTime(t.createdAt)}</b></div><div><span>SLA</span><b style="font-weight:700">${sla(t)}</b></div></div>
+      <p style="font-size:12px;font-weight:700;margin-top:16px">Employee description</p><p style="color:var(--body);margin-top:6px;white-space:pre-wrap">${esc(t.description)}</p>
+      ${t.escalationReason?`<p style="font-size:12px;font-weight:700;margin-top:16px">Escalated by ${esc(t.escalatedBy?.name||'')}</p><p style="color:#c2410c;margin-top:6px">${esc(t.escalationReason)}</p>`:''}</div>
+    <div class="card pad" style="padding:20px 18px 22px"><h2 style="margin-left:38px">Resolution Notes</h2>
+      <p class="sub" style="margin:4px 0 14px 38px">${open?'Document the fix or troubleshooting performed before resolving the ticket.':`Resolved ${fDateY(t.resolvedAt)} · ${fTime(t.resolvedAt)}`}</p>
+      ${open?`<textarea class="input" id="rn" placeholder="Enter resolution details..." ${canWork?'':'disabled'} style="min-height:52px"></textarea>`:`<p style="color:var(--body);white-space:pre-wrap">${esc(t.resolutionNotes)}</p>`}</div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Workflow</h2>
+      <label class="field" style="margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Status</span>
+        <select class="input md" id="st" ${canWork&&stOpts.length>1?'':'disabled'}>${stOpts.map(s=>`<option value="${s}">${STATUS[s]}</option>`).join('')}</select></label>
+      <label class="field" style="margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Assigned technician</span>
+        ${admin&&open?`<select class="input md" id="tc"><option value="">Unassigned</option>${techs.map(x=>`<option value="${x.id}" ${t.assignee?.id===x.id?'selected':''}>${esc(x.name)} (${x.activeTickets} active)</option>`).join('')}</select>`
+        :`<div class="input md" style="display:flex;align-items:center;gap:10px">${t.assignee?`<span class="avatar" style="width:24px;height:24px;font-size:9px">${esc(initials(t.assignee.name))}</span>${esc(t.assignee.name)}`:'<span class="muted">Unassigned</span>'}</div>`}</label>
+      <span style="display:block;font-size:11.5px;color:var(--body);margin-bottom:6px">Priority</span>
+      <div style="display:flex;gap:6px;margin-bottom:16px"><span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span><span class="pill" style="height:28px">SLA due ${dueTxt}</span></div>
+      ${canWork?'<button class="btn sm" id="sv" style="width:100%;height:36px">Save workflow update</button>':`<p class="muted" style="font-size:12px">${open?'Only the assigned technician or an admin can update this ticket.':'Resolved tickets are final.'}</p>`}</div>
+    <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Activity</h2>
+      <div class="timeline"><div class="ev"><time>${fTime(t.createdAt)}</time><div><b>Ticket created</b></div></div>
+      <p style="font-size:12px;color:var(--body);margin:2px 0 8px">Category: ${esc(t.category.name)} · Priority: ${esc(t.priority.name)}</p>
+      ${events.map(e=>`<div class="line"><span class="dot"></span><div style="font-size:11.5px;color:var(--body)">${fWhen(e.at)}<div style="margin-top:4px">${esc(e.text)}</div></div></div>`).join('')}</div>
+      <form id="nf" style="margin-top:14px"><div class="inbox"><textarea class="input" id="nb" placeholder="Add internal note..." style="min-height:40px;height:40px;padding:10px 60px 10px 10px" aria-label="Add a note"></textarea><span class="kbd" style="top:auto;bottom:10px">⌘ ↵</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><label style="font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center"><input type="checkbox" id="pub"> Visible to employee</label><button class="btn sm" style="height:28px;font-size:12px">Post note</button></div></form></div>
   </div></div>`);
-
-  const act=(b,f)=>{if($(b))$(b).onclick=run(async()=>{await f();detail(id)})};
-  act('#post',()=>api(`/tickets/${id}/comments`,'POST',{body:$('#cb').value,visibility:$('#int')?.checked?'INTERNAL':'PUBLIC'}));
-  act('#sv',()=>{
-    const st=$('#st');
-    if(!st||!st.value)throw new Error('Select a status first');
-    return api(`/tickets/${id}/status`,'POST',{status:st.value})
+  const reload=()=>go('ticket',{id:t.id,from});
+  $('#nf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#nb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:$('#pub').checked?'PUBLIC':'INTERNAL'});reload()});
+  $('#nb').onkeydown=e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))$('#nf').requestSubmit()};
+  if(!canWork)return;
+  $('#sv').onclick=safe(async()=>{
+    const ns=$('#st').value,nt=$('#tc')?.value;let changed=false;
+    if(nt&&+nt!==t.assignee?.id){await api(`/tickets/${t.id}/assign`,'POST',{technicianId:+nt});changed=true}
+    if(ns!==t.status){await api(`/tickets/${t.id}/status`,'POST',{status:ns});changed=true}
+    if(!changed)return toast('Nothing to update.');toast('Workflow updated.');reload()
   });
-  act('#as',()=>{
-    const tc=$('#tc');
-    if(!tc||!tc.value)throw new Error('Select a technician first');
-    return api(`/tickets/${id}/assign`,'POST',{technicianId:+tc.value})
-  });
-  act('#rs',()=>{
-    const rn=$('#rn');
-    if(!rn||!rn.value.trim())throw new Error('Resolution notes are required');
-    return api(`/tickets/${id}/resolve`,'POST',{notes:rn.value})
-  });
-  act('#es',()=>{
-    const reason=prompt('Reason for escalation?');
-    if(!reason||!reason.trim())throw new Error('A reason is required');
-    return api(`/tickets/${id}/escalate`,'POST',{reason:reason.trim()})
-  })
+  $('#rs').onclick=safe(async()=>{const notes=$('#rn').value.trim();if(!notes){$('#rn').focus();return toast('Add resolution notes before resolving.')}
+    await api(`/tickets/${t.id}/resolve`,'POST',{notes});toast('Ticket resolved.');reload()});
+  $('#es').onclick=()=>{const m=modal('Escalate ticket','<label class="field"><span>Reason for escalation</span><textarea class="input" id="er" placeholder="Why does this need admin review?"></textarea></label><p class="err" id="ee"></p>','<button class="btn sm" id="eo">Escalate</button>');
+    m.q('#eo').onclick=async()=>{const r=m.q('#er').value.trim();if(!r){m.q('#ee').textContent='A reason is required.';return}
+      try{await api(`/tickets/${t.id}/escalate`,'POST',{reason:r});m.close();toast('Ticket escalated.');reload()}catch(e){m.q('#ee').textContent=e.message}}}
 }
 
+/* ── Knowledge base (sample content: there is no knowledge base API yet) ── */
+const ARTICLES=[
+  {t:'Troubleshoot office Wi-Fi connectivity',c:'Network',d:'Sep 7, 2026',s:['Confirm Wi-Fi is on and airplane mode is off.','Forget the office network and reconnect with your company credentials.','Restart the laptop and check whether other devices nearby can connect.','If only this device fails, update the wireless driver; otherwise escalate to Network.']},
+  {t:'Outlook launch and profile repair',c:'Software',d:'Sep 6, 2026',s:['Close Outlook fully, then start it in safe mode (outlook.exe /safe).','Disable recently added add-ins and restart normally.','Run Repair from Control Panel › Mail › Email Accounts.','If it still fails, create a new mail profile and set it as default.']},
+  {t:'VPN access troubleshooting',c:'Network',d:'Sep 5, 2026',s:['Confirm the user has a working internet connection without VPN.','Check the user is in the VPN access group.','Reinstall or update the VPN client and sign in again.','Collect the client log and escalate if the tunnel still fails.']},
+  {t:'Password reset procedure',c:'Account Access',d:'Sep 3, 2026',s:['Verify the user’s identity using two pieces of employee information.','Reset the password in the directory and require a change at next sign-in.','Confirm the user can sign in and update saved passwords on their devices.']}];
+const KB_CATS=['Network','Software','Account Access','Hardware'];
+function articleModal(a){modal(a.t,`<p class="muted" style="margin-bottom:14px">${a.c} • Updated ${a.d}</p><ol>${a.s.map(x=>`<li>${esc(x)}</li>`).join('')}</ol><div style="height:14px"></div>`)}
+function kb(){
+  const admin=me.role==='ADMIN';let cat='';
+  shell('kb',head('Knowledge Base',admin?'Manage support articles and categories.':'Internal troubleshooting articles for resolving common IT issues.',admin?'<button class="btn" id="na">+ New Article</button>':'')+
+  `${filterBar('kf',admin?'Search articles...':'Search articles, categories, or keywords...',[['cat','Category',KB_CATS.map(c=>[c.toLowerCase(),c])]]).replace('Category: All','All Categories')}
+  <div class="cats">${KB_CATS.map(c=>{const n=ARTICLES.filter(a=>a.c===c).length;return `<button class="card" data-c="${c}"><h3>${c}</h3><span>${n} article${n===1?'':'s'}</span></button>`}).join('')}</div>
+  <div class="card pad"><h2>${admin?'Knowledge articles':'Popular articles'}</h2><p class="sub" style="margin-bottom:12px">${admin?'Published troubleshooting content':'Common fixes used by the support team'}</p><div id="al"></div></div>`);
+  const draw=f=>{const r=ARTICLES.filter(a=>(!f.q||(a.t+' '+a.c).toLowerCase().includes(f.q))&&(!f.cat||a.c.toLowerCase()===f.cat));
+    $$('[data-c]').forEach(b=>b.classList.toggle('on',b.dataset.c.toLowerCase()===f.cat));
+    $('#al').innerHTML=!r.length?'<p class="empty">No matching articles.</p>':admin
+      ?`<table class="t"><thead><tr><th>Article</th><th>Category</th><th>Status</th><th>Updated</th></tr></thead><tbody>${r.map(a=>`<tr class="click" data-a="${ARTICLES.indexOf(a)}"><td class="strong">${esc(a.t)}</td><td>${a.c}</td><td><span class="pill wide s-ok">Published</span></td><td>${a.d}</td></tr>`).join('')}</tbody></table>`
+      :r.map(a=>`<div class="art"><div><b>${esc(a.t)}</b><span>${a.c} &nbsp;•&nbsp; Updated ${a.d}</span></div><button class="btn ghost sm" data-a="${ARTICLES.indexOf(a)}" style="width:86px;height:26px;font-size:11px;border-radius:999px">View Article</button></div>`).join('');
+    $$('[data-a]').forEach(b=>b.onclick=()=>articleModal(ARTICLES[+b.dataset.a]))};
+  bindFilters('kf',draw);
+  $$('[data-c]').forEach(b=>b.onclick=()=>{const s=$('#kf [data-f="cat"]');s.value=s.value===b.dataset.c.toLowerCase()?'':b.dataset.c.toLowerCase();s.oninput()});
+  if($('#na'))$('#na').onclick=()=>toast('Adding articles needs a knowledge base API, which the server does not have yet.')
+}
+
+/* ── Admin ──────────────────────────────────────────────────────────────── */
+function addUser(role='EMPLOYEE',after){
+  const m=modal('Add User',`<label class="field"><span>Full name</span><input class="input md" id="n"></label>
+  <label class="field"><span>Email</span><input class="input md" id="em" placeholder="e.g. jane.doe@company.com"></label>
+  <label class="field"><span>Password (8+ characters)</span><input class="input md" id="pw" type="password"></label>
+  <label class="field"><span>Role</span><select class="input md" id="ro"><option value="EMPLOYEE">Employee</option><option value="TECHNICIAN">Technician</option><option value="ADMIN">Administrator</option></select></label>
+  <p class="err" id="ae"></p>`,'<button class="btn sm" id="ok">Add User</button>');
+  m.q('#ro').value=role;
+  m.q('#ok').onclick=async()=>{const b={name:m.q('#n').value.trim(),email:m.q('#em').value.trim(),password:m.q('#pw').value,role:m.q('#ro').value};
+    if(!b.name||!b.email||!b.password){m.q('#ae').textContent='All fields are required.';return}
+    try{await api('/users','POST',b);m.close();toast('User added.');after()}catch(e){m.q('#ae').textContent=e.message}}
+}
+async function adminDash(){
+  const [t,tc,u]=await Promise.all([api('/tickets'),api('/technicians'),api('/users')]);
+  const week=Date.now()-7*864e5,days=[...Array(7)].map((_,i)=>{const x=new Date();x.setHours(0,0,0,0);x.setDate(x.getDate()-6+i);return x});
+  const vol=days.map(x=>t.filter(k=>sameDay(d(k.createdAt),x)).length),max=Math.max(1,...vol);
+  const loads=tc.map(x=>x.loadPercent).filter(x=>x!=null),avg=loads.length?Math.round(loads.reduce((a,b)=>a+b,0)/loads.length):0;
+  const emps=u.filter(x=>x.role==='EMPLOYEE'&&x.active).length;
+  shell('dash',head('Admin Dashboard','Monitor tickets, users, technicians, and support performance.','<button class="btn ghost" id="ex">Export</button><button class="btn" id="au">+&nbsp; Add User</button>')+
+  `<div class="stats four">${stat('Total Tickets',t.length,`+${t.filter(x=>d(x.createdAt)>=week).length} this week`,'#4f46e5')}
+  ${stat('Open Tickets',t.filter(x=>x.status==='OPEN').length,`${t.filter(x=>x.status==='OPEN'&&!x.assignee).length} need assignment`,'#f59e0b')}
+  ${stat('Technicians',tc.length,`${avg}% avg load`,'#3b82f6')}${stat('Employees',emps,'Active accounts','#10b981')}</div>
+  <div class="card pad" style="margin-bottom:22px"><div class="headrow" style="margin:0;max-width:440px"><div><h2>Ticket volume</h2><p class="sub">Last 7 days</p></div><span class="pill">7 days</span></div>
+  <div class="chart" role="img" aria-label="Tickets created per day: ${days.map((x,i)=>x.toLocaleDateString('en-US',{weekday:'short'})+' '+vol[i]).join(', ')}">${days.map((x,i)=>`<div class="bar" title="${vol[i]} ticket${vol[i]===1?'':'s'}"><div class="track"><div class="fill" style="height:${Math.round(vol[i]/max*100)}%"></div></div>${x.toLocaleDateString('en-US',{weekday:'short'})}</div>`).join('')}</div></div>
+  <div class="card pad"><div class="headrow"><div><h2>Recent tickets</h2><p class="sub">Latest activity across the service desk</p></div><button class="btn ghost sm" id="va">View all tickets</button></div>
+  ${ticketTable(t.slice(0,5),['id','issue','emp','tech','prio','status'])}</div>`);
+  $('#ex').onclick=()=>exportTickets(t);$('#au').onclick=()=>addUser('EMPLOYEE',adminDash);$('#va').onclick=()=>go('tickets');rowsClick()
+}
+function deactivate(u,after){
+  const m=modal(`Deactivate ${u.name}?`,'<p class="muted" style="margin-bottom:20px">They will no longer be able to sign in. Their tickets and history are kept.</p>','<button class="btn sm" id="ok">Deactivate</button>');
+  m.q('#ok').onclick=async()=>{try{await api(`/users/${u.id}/deactivate`,'POST');m.close();toast('User deactivated.');after()}catch(e){toast(e.message)}}
+}
+const activePill=u=>u.active?'<span class="pill wide s-ok">Active</span>':'<span class="pill wide s-off">Inactive</span>';
 async function users(){
-  const [u,tc]=await Promise.all([api('/users'),api('/technicians')]);
-  shell('Users',`<div class="card"><h3>Add User</h3>
-<input id="n" placeholder="Full name"><input id="em" placeholder="Email address"><input id="pw" type="password" placeholder="Password (8+ chars)">
-<select id="ro"><option value="EMPLOYEE">Employee</option><option value="TECHNICIAN">Technician</option><option value="ADMIN">Administrator</option></select>
-<p class="err" id="aerr"></p><button id="add">Add User</button></div>
-<table><tr><th>Name</th><th>Email</th><th>Role</th><th>Load</th><th>Status</th><th></th></tr>
-${u.map(x=>{const l=tc.find(t=>t.id===x.id);return `<tr><td>${esc(x.name)}</td><td>${esc(x.email)}</td><td>${x.role}</td><td>${l?`${l.activeTickets} ticket${l.activeTickets!==1?'s':''} (${l.loadPercent??'–'}%)`:''}</td><td>${x.active?'Active':'<span class="m">Inactive</span>'}</td><td>${x.active&&x.id!==me.id?`<button class="ghost" data-d="${x.id}">Deactivate</button>`:''}</td></tr>`}).join('')}
-</table>`);
-  $('#add').onclick=run(async()=>{
-    const n=$('#n').value.trim(),em=$('#em').value.trim(),pw=$('#pw').value,ro=$('#ro').value;
-    if(!n||!em||!pw){$('#aerr').textContent='All fields are required';return}
-    await api('/users','POST',{name:n,email:em,password:pw,role:ro});
-    users()
-  });
-  app.querySelectorAll('[data-d]').forEach(b=>b.onclick=run(async()=>{
-    if(!confirm(`Deactivate this user?`))return;
-    await api(`/users/${b.dataset.d}/deactivate`,'POST');users()
-  }))
+  const all=await api('/users'),u=all.filter(x=>x.role!=='TECHNICIAN');
+  shell('users',head('Users','Manage employee and administrator accounts.','<button class="btn" id="au">+ Add User</button>')+
+  `<div class="stats">${stat('Employees',u.filter(x=>x.role==='EMPLOYEE').length,'Employee accounts')}${stat('Administrators',u.filter(x=>x.role==='ADMIN').length,'Admin account'+(u.filter(x=>x.role==='ADMIN').length===1?'':'s'))}${stat('Active Accounts',all.filter(x=>x.active).length,'Currently enabled')}</div>
+  ${filterBar('uf','Search users...',[['role','Role',[['employee','Employee'],['admin','Administrator']]]])}
+  <div class="card pad"><h2>User accounts</h2><p class="sub" style="margin-bottom:16px">Employees and administrators with access to IntelliDesk</p><div id="tb"></div></div>`);
+  $('#au').onclick=()=>addUser('EMPLOYEE',users);
+  bindFilters('uf',f=>{const r=u.filter(x=>(!f.q||(x.name+' '+x.email).toLowerCase().includes(f.q))&&(!f.role||x.role.toLowerCase()===f.role));
+    $('#tb').innerHTML=`<table class="t"><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Access</th><th></th></tr></thead><tbody>${r.map(x=>`<tr><td class="strong">${esc(x.name)}<div class="faint" style="font-size:11px">${esc(x.email)}</div></td><td>${ROLE_LABEL[x.role]}</td><td>${activePill(x)}</td><td>${x.role==='ADMIN'?'Full Access':'Standard'}</td>
+      <td style="text-align:right">${x.active&&x.id!==me.id?`<button class="btn danger sm" data-d="${x.id}">Deactivate</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No users match.</td></tr>'}</tbody></table>`;
+    $$('[data-d]').forEach(b=>b.onclick=()=>deactivate(u.find(x=>x.id===+b.dataset.d),users))})
+}
+async function techs(){
+  const [all,tc,t]=await Promise.all([api('/users'),api('/technicians'),api('/tickets')]);
+  const list=all.filter(x=>x.role==='TECHNICIAN'),loads=tc.map(x=>x.loadPercent).filter(x=>x!=null),avg=loads.length?Math.round(loads.reduce((a,b)=>a+b,0)/loads.length):0;
+  shell('techs',head('Technicians','Manage technician accounts and review support workload.','<button class="btn" id="au">+ Add User</button>')+
+  `<div class="stats">${stat('Technicians',list.length,'Support team members')}${stat('Average Load',avg+'%','Across active technicians')}${stat('Active',list.filter(x=>x.active).length,'Available accounts')}</div>
+  ${filterBar('xf','Search technicians...',[['st','Status',[['active','Active'],['inactive','Inactive']]]])}
+  <div class="card pad" style="min-height:200px"><h2>Technician team</h2><p class="sub" style="margin-bottom:16px">Current support team workload</p><div id="tb"></div></div>
+  <div class="card callout" style="margin-top:18px"><div><h3>Team management</h3><p>Use Add User to create technician accounts. Each technician can hold 5 active tickets at 100% load.</p></div></div>`);
+  $('#au').onclick=()=>addUser('TECHNICIAN',techs);
+  bindFilters('xf',f=>{const r=list.filter(x=>(!f.q||(x.name+' '+x.email).toLowerCase().includes(f.q))&&(!f.st||(f.st==='active')===x.active));
+    $('#tb').innerHTML=`<table class="t"><thead><tr><th>Technician</th><th>Assigned Tickets</th><th>In Progress</th><th>Load</th><th>Status</th><th></th></tr></thead><tbody>${r.map(x=>{const mine=t.filter(k=>k.assignee?.id===x.id&&k.status!=='RESOLVED'),l=tc.find(k=>k.id===x.id);
+      return `<tr><td class="strong">${esc(x.name)}</td><td>${mine.length}</td><td>${mine.filter(k=>k.status==='IN_PROGRESS').length}</td><td>${l?.loadPercent!=null?l.loadPercent+'%':'–'}</td><td>${activePill(x)}</td>
+      <td style="text-align:right">${x.active?`<button class="btn danger sm" data-d="${x.id}">Deactivate</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="6" class="empty">No technicians match.</td></tr>'}</tbody></table>`;
+    $$('[data-d]').forEach(b=>b.onclick=()=>deactivate(list.find(x=>x.id===+b.dataset.d),techs))})
+}
+/* Settings are shown read-only: the server has no settings API yet, so these mirror application.properties and seeded data. */
+function settings(){
+  const tog=(on=true)=>`<span class="pill toggle ${on?'s-ok':'s-off'}" role="switch" aria-checked="${on}" tabindex="0">${on?'Enabled':'Disabled'}</span>`;
+  const set=(l,v,s='')=>`<div class="set"><div>${l}${s?`<small>${s}</small>`:''}</div>${v}</div>`;
+  shell('settings',head('Settings','Configure basic IntelliDesk system preferences.','<button class="btn" id="sv">Save Changes</button>')+
+  `<div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px">
+  <div class="card pad" style="padding:14px 18px"><h2>Ticket Settings</h2><p class="sub" style="margin-bottom:6px">Default ticket configuration</p>
+    ${set('Default Status','<span class="val">Open</span>')}${set('Priority Levels',`<span class="val">${prios.map(p=>esc(p.name)).join(', ')}</span>`)}${set('Ticket Categories',`<span class="val">${cats.map(c=>esc(c.name)).join(', ')}</span>`)}</div>
+  <div class="card pad" style="padding:14px 18px"><h2>Authentication</h2><p class="sub" style="margin-bottom:6px">Sign-in and account security</p>
+    ${set('Two-Factor Authentication',tog())}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access',tog())}</div></div>
+  <div class="card pad" style="margin-bottom:22px;padding:18px 24px"><h2>Notifications</h2><p class="sub" style="margin-bottom:6px">Control basic email and ticket alerts</p>
+    ${set('Email Notifications',tog(),'Send email updates when ticket status changes.')}${set('Ticket Update Alerts',tog(),'Notify users when technicians add updates or resolve tickets.')}</div>
+  <div class="card callout"><div><h3>Changes apply to the entire IntelliDesk system.</h3><p>Review settings before saving to avoid disrupting employee or technician access.</p></div></div>`);
+  $$('.toggle').forEach(x=>x.onclick=x.onkeydown=e=>{if(e.type==='keydown'&&e.key!==' '&&e.key!=='Enter')return;e.preventDefault();const on=x.getAttribute('aria-checked')!=='true';
+    x.setAttribute('aria-checked',on);x.textContent=on?'Enabled':'Disabled';x.classList.toggle('s-ok',on);x.classList.toggle('s-off',!on)});
+  $('#sv').onclick=()=>toast('Settings can’t be saved yet: the server has no settings API. Values shown are the current defaults.')
 }
 
 start();
-</script></body></html>
+</script>
+</body>
+</html>
