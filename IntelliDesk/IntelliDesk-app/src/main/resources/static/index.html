@@ -237,7 +237,9 @@ const fDateY=x=>x?d(x).toLocaleDateString('en-US',{month:'short',day:'numeric',y
 const fTime=x=>x?d(x).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
 const fWhen=x=>!x?'':sameDay(d(x),new Date())?'Today, '+fTime(x):fDate(x)+', '+fTime(x);
 function dur(ms){const m=Math.round(Math.abs(ms)/60000),h=Math.floor(m/60),dd=Math.floor(h/24);return dd?`${dd}d ${h%24}h`:h?`${h}h ${m%60}m`:`${m}m`}
-function sla(t){if(t.status==='RESOLVED')return d(t.resolvedAt)<=d(t.dueAt)?'Met':'Missed';const ms=d(t.dueAt)-Date.now();return ms>=0?'Due in '+dur(ms):'Overdue by '+dur(ms)}
+function sla(t){if(t.status==='RESOLVED')return d(t.resolvedAt)<=d(t.dueAt)?'Met':'Missed';
+  if(t.pausedAt){const left=d(t.dueAt)-d(t.pausedAt);return left>=0?'Paused · '+dur(left)+' left':'Paused · overdue by '+dur(left)}
+  const ms=d(t.dueAt)-Date.now();return ms>=0?'Due in '+dur(ms):'Overdue by '+dur(ms)}
 
 async function api(p,m='GET',b){
   const r=await fetch('/api'+p,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
@@ -511,7 +513,8 @@ function empTicket(t,cm,at,from){
     <h2 style="margin:22px 0 12px">Attachments</h2>${attList(at)}${t.status!=='RESOLVED'?dropZone('tdrop'):''}
     <h2 style="margin:26px 0 14px">Activity</h2>
     <div class="feed">${feed.map(f=>`<div class="it"><span class="dot"></span><div><div class="who2">${esc(f.who)} &nbsp;•&nbsp; ${fWhen(f.at)}</div><p>${esc(f.text)}</p></div></div>`).join('')}</div>
-    ${t.status!=='RESOLVED'?`<form class="inbox" id="cf" style="margin-top:24px"><input class="input" id="cb" placeholder="Add a comment or update..." aria-label="Add a comment"><span class="kbd">⌘ ↵</span></form>
+    ${t.status==='PENDING'?`<div class="secinfo" role="status" style="margin:24px 0 0;background:#fff7ed;border-color:#fed7aa"><b style="color:#9a3412">IT support is waiting for your reply</b><span>Answer the latest question above. Replying sends the ticket back to the technician.</span></div>`:''}
+    ${t.status!=='RESOLVED'?`<form class="inbox" id="cf" style="margin-top:${t.status==='PENDING'?14:24}px"><input class="input" id="cb" placeholder="${t.status==='PENDING'?'Reply to IT support...':'Add a comment or update...'}" aria-label="Add a comment"><span class="kbd">⌘ ↵</span></form>
     <p class="faint" style="font-size:11px;margin-top:8px">Comments are visible to the assigned technician.</p>`:''}
   </div>
   <div class="card props" style="padding:14px 16px 16px"><h2 style="font-size:15px;margin-bottom:6px">Properties</h2>
@@ -531,6 +534,7 @@ function histText(x){
   if(x.field==='assignee')return `${who} assigned ${x.newValue}`;
   if(x.field==='escalated')return `${who} escalated: ${x.newValue}`;
   if(x.field==='attachment')return `${who} attached ${x.newValue}`;
+  if(x.field==='sla')return `SLA resumed after waiting on the employee; deadline moved ${dur(d(x.newValue)-d(x.oldValue))} later`;
   if(x.field==='priority')return `${who} changed priority from ${x.oldValue} to ${x.newValue}`;
   return `${who} changed ${x.field}`
 }
@@ -560,13 +564,16 @@ async function staffTicket(t,cm,h,at,from){
     <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Workflow</h2>
       <label class="field" style="margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Status</span>
         <select class="input md" id="st" ${canWork&&stOpts.length>1?'':'disabled'}>${stOpts.map(s=>`<option value="${s}">${STATUS[s]}</option>`).join('')}</select></label>
+      ${canWork&&stOpts.includes('PENDING')&&t.status!=='PENDING'?`<label class="field" id="pqw" style="display:none;margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Question for the employee (required)</span>
+        <textarea class="input" id="pq" placeholder="What do you need from the employee?" style="min-height:64px;font-size:13px"></textarea>
+        <small class="muted" style="display:block;font-size:11px;margin-top:6px">Posted to the employee. The SLA timer pauses until they reply.</small></label>`:''}
       <label class="field" style="margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Assigned technician</span>
         ${admin&&open?`<select class="input md" id="tc"><option value="">Unassigned</option>${techs.map(x=>`<option value="${x.id}" ${t.assignee?.id===x.id?'selected':''}>${esc(x.name)} (${x.activeTickets} active)</option>`).join('')}</select>`
         :`<div class="input md" style="display:flex;align-items:center;gap:10px">${t.assignee?`<span class="avatar" style="width:24px;height:24px;font-size:9px">${esc(initials(t.assignee.name))}</span>${esc(t.assignee.name)}`:'<span class="muted">Unassigned</span>'}</div>`}</label>
       <span style="display:block;font-size:11.5px;color:var(--body);margin-bottom:6px">Priority</span>
       <div style="display:flex;gap:6px;margin-bottom:16px;align-items:center">${canWork
         ?`<select class="input md" id="pr" aria-label="Priority" style="width:118px;height:34px;padding:0 30px 0 12px;font-size:13px">${prios.map(p=>`<option value="${p.id}" ${p.id===t.priority.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`
-        :`<span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span>`}<span class="pill" style="height:28px">SLA due ${dueTxt}</span></div>
+        :`<span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span>`}<span class="pill" style="height:28px">${t.pausedAt?'SLA paused':'SLA due '+dueTxt}</span></div>
       ${canWork?'<button class="btn sm" id="sv" style="width:100%;height:36px">Save workflow update</button>':`<p class="muted" style="font-size:12px">${open?'Only the assigned technician or an admin can update this ticket.':'Resolved tickets are final.'}</p>`}</div>
     <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Activity</h2>
       <div class="timeline"><div class="ev"><time>${fTime(t.createdAt)}</time><div><b>Ticket created</b></div></div>
@@ -576,14 +583,16 @@ async function staffTicket(t,cm,h,at,from){
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><label style="font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center"><input type="checkbox" id="pub"> Visible to employee</label><button class="btn sm" style="height:28px;font-size:12px">Post note</button></div></form></div>
   </div></div>`);
   const reload=()=>go('ticket',{id:t.id,from});bindTicketDrop(t,from);
+  if($('#pqw'))$('#st').onchange=()=>{const on=$('#st').value==='PENDING';$('#pqw').style.display=on?'block':'none';if(on)$('#pq').focus()};
   $('#nf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#nb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:$('#pub').checked?'PUBLIC':'INTERNAL'});reload()});
   $('#nb').onkeydown=e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))$('#nf').requestSubmit()};
   if(!canWork)return;
   $('#sv').onclick=safe(async()=>{
-    const ns=$('#st').value,nt=$('#tc')?.value;let changed=false;
+    const ns=$('#st').value,nt=$('#tc')?.value,q=$('#pq')?.value.trim();let changed=false;
+    if(ns==='PENDING'&&ns!==t.status&&!q){$('#pq').focus();return toast('Write what you need from the employee before setting the ticket to Pending.')}
     if(nt&&+nt!==t.assignee?.id){await api(`/tickets/${t.id}/assign`,'POST',{technicianId:+nt});changed=true}
     const np=+$('#pr').value;if(np!==t.priority.id){await api(`/tickets/${t.id}/priority`,'POST',{priorityId:np});changed=true}
-    if(ns!==t.status){await api(`/tickets/${t.id}/status`,'POST',{status:ns});changed=true}
+    if(ns!==t.status){await api(`/tickets/${t.id}/status`,'POST',{status:ns,question:q});changed=true}
     if(!changed)return toast('Nothing to update.');toast('Workflow updated.');reload()
   });
   $('#rs').onclick=safe(async()=>{const notes=$('#rn').value.trim();if(!notes){$('#rn').focus();return toast('Add resolution notes before resolving.')}

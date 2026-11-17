@@ -14,6 +14,10 @@ public class Ticket {
   @ManyToOne(optional=false) @JoinColumn(name="priority_id") public PriorityPolicy priority;
   @Column(nullable=false) public Instant createdAt;
   @Column(nullable=false) public Instant dueAt;
+  /** Set while the ticket is PENDING (waiting on the employee); the SLA clock is paused from this moment. */
+  public Instant pausedAt;
+  /** Total seconds the SLA clock was paused in earlier PENDING periods; dueAt already includes them. */
+  public Long pausedSeconds;
   public Instant resolvedAt;
   @Column(length=4000) public String resolutionNotes;
   @ManyToOne @JoinColumn(name="escalated_by") public User escalatedBy;

@@ -64,7 +64,8 @@ IT requests sent by email or in person are easy to lose, and nobody can see stat
 - **assignee** (`User`, 0..1): the technician. Empty until an admin assigns one.
 - **escalatedBy** (`User`, 0..1): who escalated the ticket, if anyone.
 - **Category** is chosen by the employee. **Priority** always starts at `MEDIUM` so employees cannot over-prioritize; the assigned technician or an admin changes it after triage (`changePriority`), which recalculates `dueAt`.
-- **SLA deadline:** `dueAt = createdAt + resolutionHours`. Configurable; proposed `LOW` 48 h, `MEDIUM` 24 h, `HIGH` 4 h.
+- **SLA deadline:** `dueAt = createdAt + resolutionHours + time spent PENDING`. Configurable; proposed `LOW` 48 h, `MEDIUM` 24 h, `HIGH` 4 h.
+- **SLA pause:** `PENDING` means waiting on the employee, so the SLA clock pauses (`pausedAt`). Moving to `PENDING` requires a question that is posted to the employee, and the employee's reply moves the ticket back to `IN_PROGRESS` and resumes the clock. The waiting time is added to `dueAt` and recorded in `TicketHistory`.
 
 ### Communication and history
 
@@ -126,7 +127,7 @@ Proposed rules for the main ticket operations. Every operation checks the signed
 | --- | --- | --- |
 | `createTicket` | Submit Ticket | Sets submitter, default status, default priority (`MEDIUM`), timestamps, `dueAt` |
 | `assign` | Assigned technician | Admins only; must be an active technician |
-| `changeStatus` | Save workflow update | Assigned technician or admin; allowed changes only |
+| `changeStatus` | Save workflow update | Assigned technician or admin; allowed changes only. `PENDING` needs a question for the employee and pauses the SLA |
 | `changePriority` | Save workflow update | Assigned technician or admin; recalculates `dueAt` from `createdAt` |
 | `resolve` | Resolve Ticket | Needs an assignee and resolution notes |
 | `escalate` | Escalate | Saves who, when and why; flags for admin review |

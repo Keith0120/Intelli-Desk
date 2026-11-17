@@ -71,13 +71,38 @@ public class TicketService {
     if (tech.role != Role.TECHNICIAN || !tech.active) throw err(HttpStatus.BAD_REQUEST, "Must be an active technician");
     log(t, admin, "assignee", t.assignee == null ? null : t.assignee.name, tech.name); t.assignee = tech; return t;
   }
-  public Ticket changeStatus(User u, Long id, TicketStatus to) {
+  /** SLA deadline = created + priority hours + time spent waiting on the employee. */
+  private static Instant deadline(Ticket t) {
+    long paused = t.pausedSeconds == null ? 0 : t.pausedSeconds;
+    return t.createdAt.plus(t.priority.resolutionHours, ChronoUnit.HOURS).plusSeconds(paused);
+  }
+  /** Ends an SLA pause: the waiting time is added to the deadline and recorded in the history. */
+  private void resumeSla(Ticket t, User by) {
+    if (t.pausedAt == null) return;
+    long secs = Math.max(0, java.time.Duration.between(t.pausedAt, Instant.now()).getSeconds());
+    t.pausedSeconds = (t.pausedSeconds == null ? 0 : t.pausedSeconds) + secs;
+    t.pausedAt = null;
+    Instant old = t.dueAt; t.dueAt = deadline(t);
+    log(t, by, "sla", old, t.dueAt);
+  }
+  /**
+   * PENDING means "waiting on the employee", so it pauses the SLA clock. To stop it being used just to gain time,
+   * moving to PENDING requires a question that is posted to the employee, and the employee's reply resumes the clock.
+   */
+  public Ticket changeStatus(User u, Long id, TicketStatus to, String question) {
     Ticket t = workable(u, id);
     if (to == null) throw err(HttpStatus.BAD_REQUEST, "Status is required");
     if (to == RESOLVED) throw err(HttpStatus.BAD_REQUEST, "Use resolve to close a ticket");
     Set<TicketStatus> allowed = NEXT.get(t.status);
     if (allowed == null || !allowed.contains(to))
       throw err(HttpStatus.BAD_REQUEST, "Status change not allowed: " + t.status + " → " + to);
+    if (to == PENDING) {
+      if (blank(question)) throw err(HttpStatus.BAD_REQUEST, "Tell the employee what you need from them before setting the ticket to Pending");
+      Comment c = new Comment(); c.ticket = t; c.author = u; c.body = question.trim(); c.createdAt = Instant.now();
+      c.visibility = CommentVisibility.PUBLIC; comments.save(c);
+      t.pausedAt = Instant.now();
+    }
+    if (t.status == PENDING) resumeSla(t, u);
     log(t, u, "status", t.status, to); t.status = to; return t;
   }
   /** Assigned technician or admin re-prioritizes a ticket; the SLA deadline is recalculated from the creation time. */
@@ -86,12 +111,13 @@ public class TicketService {
     PriorityPolicy p = prios.findById(prioId == null ? -1L : prioId).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown priority"));
     if (p.id.equals(t.priority.id)) return t;
     log(t, u, "priority", t.priority.name, p.name);
-    t.priority = p; t.dueAt = t.createdAt.plus(p.resolutionHours, ChronoUnit.HOURS); return t;
+    t.priority = p; t.dueAt = deadline(t); return t;
   }
   public Ticket resolve(User u, Long id, String notes) {
     Ticket t = workable(u, id);
     if (t.assignee == null) throw err(HttpStatus.BAD_REQUEST, "Assign a technician first");
     if (blank(notes)) throw err(HttpStatus.BAD_REQUEST, "Resolution notes are required");
+    resumeSla(t, u);
     log(t, u, "status", t.status, RESOLVED); t.status = RESOLVED; t.resolvedAt = Instant.now(); t.resolutionNotes = notes.trim(); return t;
   }
   public Ticket escalate(User u, Long id, String reason) {
@@ -104,7 +130,11 @@ public class TicketService {
     if (blank(body)) throw err(HttpStatus.BAD_REQUEST, "Comment is empty");
     Comment c = new Comment(); c.ticket = t; c.author = u; c.body = body.trim(); c.createdAt = Instant.now();
     c.visibility = (u.role == Role.EMPLOYEE || vis == null) ? CommentVisibility.PUBLIC : vis; // INTERNAL is staff-only
-    return comments.save(c);
+    comments.save(c);
+    if (u.role == Role.EMPLOYEE && t.status == PENDING) { // the employee answered: back to work, clock running
+      resumeSla(t, u); log(t, u, "status", PENDING, IN_PROGRESS); t.status = IN_PROGRESS;
+    }
+    return c;
   }
   @Transactional(readOnly = true)
   public List<Comment> comments(User u, Long id) {

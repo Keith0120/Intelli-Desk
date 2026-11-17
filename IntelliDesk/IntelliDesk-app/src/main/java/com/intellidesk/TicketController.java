@@ -9,7 +9,7 @@ public class TicketController {
   record NewTicket(String title, String description, Long categoryId) {}
   record Priority(Long priorityId) {}
   record Assign(Long technicianId) {}
-  record StatusChange(TicketStatus status) {}
+  record StatusChange(TicketStatus status, String question) {}
   record Notes(String notes) {}
   record Reason(String reason) {}
   record NewComment(String body, CommentVisibility visibility) {}
@@ -20,7 +20,7 @@ public class TicketController {
   @PostMapping("/tickets") public Ticket create(@RequestBody NewTicket b, HttpSession s) { return svc.create(auth.current(s), b.title(), b.description(), b.categoryId()); }
   @GetMapping("/tickets/{id}") public Ticket get(@PathVariable Long id, HttpSession s) { return svc.get(auth.current(s), id); }
   @PostMapping("/tickets/{id}/assign") public Ticket assign(@PathVariable Long id, @RequestBody Assign b, HttpSession s) { return svc.assign(auth.require(s, ADMIN), id, b.technicianId()); }
-  @PostMapping("/tickets/{id}/status") public Ticket status(@PathVariable Long id, @RequestBody StatusChange b, HttpSession s) { return svc.changeStatus(auth.require(s, TECHNICIAN, ADMIN), id, b.status()); }
+  @PostMapping("/tickets/{id}/status") public Ticket status(@PathVariable Long id, @RequestBody StatusChange b, HttpSession s) { return svc.changeStatus(auth.require(s, TECHNICIAN, ADMIN), id, b.status(), b.question()); }
   @PostMapping("/tickets/{id}/priority") public Ticket priority(@PathVariable Long id, @RequestBody Priority b, HttpSession s) { return svc.changePriority(auth.require(s, TECHNICIAN, ADMIN), id, b.priorityId()); }
   @PostMapping("/tickets/{id}/resolve") public Ticket resolve(@PathVariable Long id, @RequestBody Notes b, HttpSession s) { return svc.resolve(auth.require(s, TECHNICIAN, ADMIN), id, b.notes()); }
   @PostMapping("/tickets/{id}/escalate") public Ticket escalate(@PathVariable Long id, @RequestBody Reason b, HttpSession s) { return svc.escalate(auth.require(s, TECHNICIAN, ADMIN), id, b.reason()); }
