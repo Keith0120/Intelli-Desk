@@ -28,6 +28,8 @@ public class TicketService {
   public TicketService(TicketRepo t, CommentRepo c, HistoryRepo h, CategoryRepo ca, PriorityRepo p, UserRepo u) {
     tickets = t; comments = c; history = h; cats = ca; prios = p; users = u;
   }
+  /** Priority given to every new ticket. Employees cannot choose it; staff adjust it after triage. */
+  static final String DEFAULT_PRIORITY = "Medium";
   private static ResponseStatusException err(HttpStatus s, String m) { return new ResponseStatusException(s, m); }
   private static boolean blank(String s) { return s == null || s.isBlank(); }
   private void log(Ticket t, User by, String field, Object o, Object n) {
@@ -35,12 +37,14 @@ public class TicketService {
     h.oldValue = o == null ? null : o.toString(); h.newValue = n == null ? null : n.toString(); h.changedAt = Instant.now();
     history.save(h);
   }
-  public Ticket create(User u, String title, String desc, Long catId, Long prioId) {
+  /** Employees choose only the category; priority always starts at DEFAULT_PRIORITY (any priority sent by the client is ignored). */
+  public Ticket create(User u, String title, String desc, Long catId) {
     if (u.role != Role.EMPLOYEE) throw err(HttpStatus.FORBIDDEN, "Only employees submit tickets");
-    if (blank(title) || blank(desc) || catId == null || prioId == null) throw err(HttpStatus.BAD_REQUEST, "Title, category, priority and description are required");
+    if (blank(title) || blank(desc) || catId == null) throw err(HttpStatus.BAD_REQUEST, "Title, category and description are required");
     Ticket t = new Ticket(); t.title = title.trim(); t.description = desc.trim(); t.submitter = u; t.status = OPEN;
     t.category = cats.findById(catId).filter(c -> c.active).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown category"));
-    t.priority = prios.findById(prioId).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown priority"));
+    t.priority = prios.findByNameIgnoreCase(DEFAULT_PRIORITY).or(prios::findFirstByOrderByRankAsc)
+        .orElseThrow(() -> err(HttpStatus.INTERNAL_SERVER_ERROR, "No priority levels are configured"));
     t.createdAt = Instant.now(); t.dueAt = t.createdAt.plus(t.priority.resolutionHours, ChronoUnit.HOURS);
     tickets.save(t); log(t, u, "status", null, OPEN); return t;
   }
@@ -67,19 +71,53 @@ public class TicketService {
     if (tech.role != Role.TECHNICIAN || !tech.active) throw err(HttpStatus.BAD_REQUEST, "Must be an active technician");
     log(t, admin, "assignee", t.assignee == null ? null : t.assignee.name, tech.name); t.assignee = tech; return t;
   }
-  public Ticket changeStatus(User u, Long id, TicketStatus to) {
+  /** SLA deadline = created + priority hours + time spent waiting on the employee. */
+  private static Instant deadline(Ticket t) {
+    long paused = t.pausedSeconds == null ? 0 : t.pausedSeconds;
+    return t.createdAt.plus(t.priority.resolutionHours, ChronoUnit.HOURS).plusSeconds(paused);
+  }
+  /** Ends an SLA pause: the waiting time is added to the deadline and recorded in the history. */
+  private void resumeSla(Ticket t, User by) {
+    if (t.pausedAt == null) return;
+    long secs = Math.max(0, java.time.Duration.between(t.pausedAt, Instant.now()).getSeconds());
+    t.pausedSeconds = (t.pausedSeconds == null ? 0 : t.pausedSeconds) + secs;
+    t.pausedAt = null;
+    Instant old = t.dueAt; t.dueAt = deadline(t);
+    log(t, by, "sla", old, t.dueAt);
+  }
+  /**
+   * PENDING means "waiting on the employee", so it pauses the SLA clock. To stop it being used just to gain time,
+   * moving to PENDING requires a question that is posted to the employee, and the employee's reply resumes the clock.
+   */
+  public Ticket changeStatus(User u, Long id, TicketStatus to, String question) {
     Ticket t = workable(u, id);
     if (to == null) throw err(HttpStatus.BAD_REQUEST, "Status is required");
     if (to == RESOLVED) throw err(HttpStatus.BAD_REQUEST, "Use resolve to close a ticket");
     Set<TicketStatus> allowed = NEXT.get(t.status);
     if (allowed == null || !allowed.contains(to))
       throw err(HttpStatus.BAD_REQUEST, "Status change not allowed: " + t.status + " → " + to);
+    if (to == PENDING) {
+      if (blank(question)) throw err(HttpStatus.BAD_REQUEST, "Tell the employee what you need from them before setting the ticket to Pending");
+      Comment c = new Comment(); c.ticket = t; c.author = u; c.body = question.trim(); c.createdAt = Instant.now();
+      c.visibility = CommentVisibility.PUBLIC; comments.save(c);
+      t.pausedAt = Instant.now();
+    }
+    if (t.status == PENDING) resumeSla(t, u);
     log(t, u, "status", t.status, to); t.status = to; return t;
+  }
+  /** Assigned technician or admin re-prioritizes a ticket; the SLA deadline is recalculated from the creation time. */
+  public Ticket changePriority(User u, Long id, Long prioId) {
+    Ticket t = workable(u, id);
+    PriorityPolicy p = prios.findById(prioId == null ? -1L : prioId).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown priority"));
+    if (p.id.equals(t.priority.id)) return t;
+    log(t, u, "priority", t.priority.name, p.name);
+    t.priority = p; t.dueAt = deadline(t); return t;
   }
   public Ticket resolve(User u, Long id, String notes) {
     Ticket t = workable(u, id);
     if (t.assignee == null) throw err(HttpStatus.BAD_REQUEST, "Assign a technician first");
     if (blank(notes)) throw err(HttpStatus.BAD_REQUEST, "Resolution notes are required");
+    resumeSla(t, u);
     log(t, u, "status", t.status, RESOLVED); t.status = RESOLVED; t.resolvedAt = Instant.now(); t.resolutionNotes = notes.trim(); return t;
   }
   public Ticket escalate(User u, Long id, String reason) {
@@ -92,7 +130,11 @@ public class TicketService {
     if (blank(body)) throw err(HttpStatus.BAD_REQUEST, "Comment is empty");
     Comment c = new Comment(); c.ticket = t; c.author = u; c.body = body.trim(); c.createdAt = Instant.now();
     c.visibility = (u.role == Role.EMPLOYEE || vis == null) ? CommentVisibility.PUBLIC : vis; // INTERNAL is staff-only
-    return comments.save(c);
+    comments.save(c);
+    if (u.role == Role.EMPLOYEE && t.status == PENDING) { // the employee answered: back to work, clock running
+      resumeSla(t, u); log(t, u, "status", PENDING, IN_PROGRESS); t.status = IN_PROGRESS;
+    }
+    return c;
   }
   @Transactional(readOnly = true)
   public List<Comment> comments(User u, Long id) {

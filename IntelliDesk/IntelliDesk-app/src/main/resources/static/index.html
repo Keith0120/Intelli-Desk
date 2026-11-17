@@ -167,7 +167,17 @@ table.t{width:100%;border-collapse:collapse}
 .kv span{display:block;font-size:11.5px;color:var(--muted)}.kv b{display:block;font-weight:500;font-size:14px;color:var(--ink-2);margin-top:4px}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:300px;height:88px;border:1.5px dashed #cbd5e1;border-radius:12px;
   color:var(--body);font-size:12.5px;cursor:pointer;text-align:center;background:rgba(255,255,255,.6)}
-.drop:hover{border-color:#a5b4fc;background:#f8faff}
+.drop:hover,.drop:focus-visible,.drop.over{border-color:#a5b4fc;background:#f8faff;outline:none}
+.drop.busy{opacity:.6;pointer-events:none}
+.atts{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.att{width:148px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;text-decoration:none;color:inherit;box-shadow:var(--field-shadow)}
+.att:hover{border-color:#a5b4fc}
+.att img{display:block;width:100%;height:92px;object-fit:cover;background:#f1f5f9}
+.att div{padding:8px 10px}.att b{display:block;font-size:12px;font-weight:500;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att span{font-size:11px;color:var(--muted)}
+.pending{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.pending span{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 12px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;color:var(--body)}
+.pending button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px}
 .faq{display:grid;grid-template-columns:1fr 1fr;gap:20px 34px}
 .faq .card{padding:20px 22px;min-height:142px}.faq h3{font-size:14.5px;font-weight:700}.faq p{font-size:12.5px;color:var(--body);margin-top:14px}
 .cats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:30px}
@@ -227,7 +237,9 @@ const fDateY=x=>x?d(x).toLocaleDateString('en-US',{month:'short',day:'numeric',y
 const fTime=x=>x?d(x).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
 const fWhen=x=>!x?'':sameDay(d(x),new Date())?'Today, '+fTime(x):fDate(x)+', '+fTime(x);
 function dur(ms){const m=Math.round(Math.abs(ms)/60000),h=Math.floor(m/60),dd=Math.floor(h/24);return dd?`${dd}d ${h%24}h`:h?`${h}h ${m%60}m`:`${m}m`}
-function sla(t){if(t.status==='RESOLVED')return d(t.resolvedAt)<=d(t.dueAt)?'Met':'Missed';const ms=d(t.dueAt)-Date.now();return ms>=0?'Due in '+dur(ms):'Overdue by '+dur(ms)}
+function sla(t){if(t.status==='RESOLVED')return d(t.resolvedAt)<=d(t.dueAt)?'Met':'Missed';
+  if(t.pausedAt){const left=d(t.dueAt)-d(t.pausedAt);return left>=0?'Paused · '+dur(left)+' left':'Paused · overdue by '+dur(left)}
+  const ms=d(t.dueAt)-Date.now();return ms>=0?'Due in '+dur(ms):'Overdue by '+dur(ms)}
 
 async function api(p,m='GET',b){
   const r=await fetch('/api'+p,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
@@ -251,6 +263,36 @@ function exportTickets(t){
     ...t.map(x=>[x.id,x.title,STATUS[x.status],x.priority.name,x.category.name,x.submitter.name,x.assignee?.name||'',x.createdAt,x.dueAt,x.resolvedAt||''])])
 }
 
+/* ── Attachments (JPEG/PNG up to 10 MB) ────────────────────────────────── */
+const MAX_FILE=10*1024*1024,FILE_TYPES=['image/png','image/jpeg'];
+const fSize=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1)+' MB';
+const fileProblem=f=>!FILE_TYPES.includes(f.type)?`${f.name} is not a JPEG or PNG image.`:f.size>MAX_FILE?`${f.name} is larger than 10 MB.`:'';
+async function uploadFile(ticketId,f){
+  const fd=new FormData();fd.append('file',f);
+  const r=await fetch(`/api/tickets/${ticketId}/attachments`,{method:'POST',body:fd});
+  if(!r.ok){let e='';try{e=(await r.json()).message}catch{}throw new Error(`${f.name}: ${e||r.statusText}`)}
+  return r.json()
+}
+const dropZone=id=>`<label class="drop" id="${id}" tabindex="0" role="button" aria-label="Upload screenshots"><span style="font-size:18px" aria-hidden="true">⇪</span><span data-msg>Drag &amp; drop or click to upload<br>JPEG/JPG or PNG or up to 10MB</span><input type="file" accept="image/png,image/jpeg" multiple hidden></label>`;
+function bindDrop(id,onFiles){
+  const z=$('#'+id),inp=z.querySelector('input');
+  inp.onchange=()=>{onFiles([...inp.files]);inp.value=''};
+  z.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inp.click()}};
+  z.ondragover=e=>{e.preventDefault();z.classList.add('over')};z.ondragleave=()=>z.classList.remove('over');
+  z.ondrop=e=>{e.preventDefault();z.classList.remove('over');onFiles([...e.dataTransfer.files])}
+}
+const attList=a=>a.length?`<div class="atts">${a.map(x=>`<a class="att" href="/api/attachments/${x.id}" target="_blank" rel="noopener" title="Open ${esc(x.fileName)}"><img src="/api/attachments/${x.id}" alt="${esc(x.fileName)}" loading="lazy"><div><b>${esc(x.fileName)}</b><span>${fSize(x.sizeBytes)} · ${esc(x.uploadedBy.id===me.id?'You':x.uploadedBy.name)}</span></div></a>`).join('')}</div>`:'<p class="muted" style="font-size:12.5px;margin-bottom:12px">No screenshots attached yet.</p>';
+/* Upload box on a ticket page: uploads straight away, then reloads the ticket */
+function bindTicketDrop(t,from){
+  if(!$('#tdrop'))return;
+  bindDrop('tdrop',async files=>{
+    const bad=files.map(fileProblem).filter(Boolean);if(bad.length)return toast(bad.join(' '));
+    const z=$('#tdrop');z.classList.add('busy');z.querySelector('[data-msg]').textContent=`Uploading ${files.length} file${files.length>1?'s':''}…`;
+    try{for(const f of files)await uploadFile(t.id,f);toast(files.length>1?'Screenshots attached.':'Screenshot attached.')}catch(e){toast(e.message)}
+    go('ticket',{id:t.id,from})
+  })
+}
+
 /* ── Authentication ─────────────────────────────────────────────────────── */
 const ORBS=[['blue',60,-100,430,22.09],['indigo',360,430,390,25.64],['purple',-120,530,360,26.39],['emerald',390,70,260,34.62]];
 function brand(sub){
@@ -267,7 +309,7 @@ function login(msg=''){
   <p class="hint">A verification code is required after sign in.</p>
   <p class="err" id="err" role="alert">${esc(msg)}</p>
   <button class="btn lg" id="go">Sign In</button>
-  <div class="demo"><b>Demo access for class project</b>
+  <div class="demo">
     <p>Employee: james.carter</p><p>Technician: marcus.webb</p><p>Admin: admin</p><p>Password for all: password</p></div>
   </form></div>${brand('One secure sign-in for employees, technicians, and administrators.')}</div>`;
   $('#role').value=wantRole;
@@ -335,7 +377,7 @@ const rowsClick=()=>$$('[data-t]').forEach(r=>r.onclick=()=>go('ticket',{id:+r.d
 /* Generic ticket table: cols is a list of column keys */
 const COLS={
   id:['Ticket',x=>`<td class="id">#${String(x.id).padStart(3,'0')}</td>`],
-  issue:['Issue',x=>`<td class="strong">${esc(x.title)}</td>`],
+  issue:['Issue',x=>`<td class="strong">${esc(x.title)}${x.escalationReason&&me.role!=='EMPLOYEE'&&x.status!=='RESOLVED'?'<span class="tag" title="Escalated for admin review">Escalated</span>':''}</td>`],
   emp:['Employee',x=>`<td>${esc(x.submitter.name)}</td>`],
   tech:['Technician',x=>`<td>${esc(x.assignee?.name||'Unassigned')}</td>`],
   cat:['Category',x=>`<td>${esc(x.category.name)}</td>`],
@@ -355,7 +397,7 @@ function bindFilters(id,draw,init={}){
   const vals=()=>Object.fromEntries($$(`#${id} [data-f]`).map(e=>[e.dataset.f,e.value.trim().toLowerCase()]));
   $$(`#${id} [data-f]`).forEach(e=>{if(init[e.dataset.f])e.value=init[e.dataset.f];e.oninput=()=>draw(vals())});draw(vals())
 }
-const matchT=(x,f)=>(!f.q||`#${x.id} ${x.id} ${x.title} ${x.submitter.name} ${x.assignee?.name||''} ${x.category.name}`.toLowerCase().includes(f.q))
+const matchT=(x,f)=>(!f.q||`#${x.id} ${x.id} ${x.title} ${x.submitter.name} ${x.assignee?.name||''} ${x.category.name} ${x.escalationReason?'escalated':''}`.toLowerCase().includes(f.q))
   &&(!f.status||x.status.toLowerCase()===f.status)&&(!f.prio||x.priority.name.toLowerCase()===f.prio);
 const STATUS_OPTS=Object.entries(STATUS);
 const prioOpts=()=>prios.map(p=>[p.name.toLowerCase(),p.name]);
@@ -377,30 +419,33 @@ function newTicket(){
     <label class="field"><span>Title</span><input class="input md" id="t" placeholder="Wi-Fi connection problem" maxlength="200"></label>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <label class="field"><span>Category</span><select class="input md" id="c">${cats.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
-      <label class="field"><span>Priority</span><select class="input md" id="p">${prios.map(p=>`<option value="${p.id}" ${p.name==='Medium'?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+      <div class="field"><span>Priority</span><div class="input md" style="display:flex;align-items:center;color:var(--muted);background:#f8fafc" aria-label="Priority is set by IT support">Set by IT support after review</div></div></div>
     <label class="field"><span>Description</span><textarea class="input" id="d" placeholder="Describe the problem and what you have already tried." maxlength="4000"></textarea></label>
     <div class="field" style="margin-bottom:16px"><span>Attachments (Optional)</span>
-      <label class="drop" id="drop"><span style="font-size:18px">⇪</span>Drag &amp; drop or click to upload<br>JPEG/JPG or PNG or up to 10MB<input type="file" id="file" accept="image/png,image/jpeg" multiple hidden></label>
-      <p class="muted" id="files" style="font-size:12px;margin-top:8px"></p></div>
+      ${dropZone('drop')}<div class="pending" id="files"></div></div>
     <p class="err" id="err" role="alert"></p>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span class="muted" style="font-size:11.5px">Required fields: Title, Category, Priority, Description</span><button class="btn" id="go">Submit Ticket</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span class="muted" style="font-size:11.5px">Required fields: Title, Category, Description</span><button class="btn" id="go">Submit Ticket</button></div>
   </form>
   <div class="card pad" style="padding:20px 18px 40px"><h2 style="font-size:15px;margin-bottom:14px">How it works</h2>
     <p class="muted" style="font-size:12.5px;line-height:1.35">1. Submit ticket<br>2. Technician reviews it<br>3. Status is updated<br>4. Ticket is resolved</p></div></div>`);
-  const show=fs=>{$('#files').textContent=fs.length?`${[...fs].map(f=>f.name).join(', ')} — attachments are not saved yet (the server has no upload support).`:''};
-  $('#file').onchange=e=>show(e.target.files);
-  $('#drop').ondragover=e=>e.preventDefault();$('#drop').ondrop=e=>{e.preventDefault();show(e.dataTransfer.files)};
+  let files=[];
+  const show=()=>{$('#files').innerHTML=files.map((f,i)=>`<span>${esc(f.name)} · ${fSize(f.size)}<button type="button" data-drop-i="${i}" aria-label="Take off ${esc(f.name)}">×</button></span>`).join('');
+    $$('[data-drop-i]').forEach(b=>b.onclick=()=>{files.splice(+b.dataset.dropI,1);show()})};
+  bindDrop('drop',fs=>{const bad=fs.map(fileProblem).filter(Boolean);if(bad.length)toast(bad.join(' '));files.push(...fs.filter(f=>!fileProblem(f)));show()});
   $('#f').onsubmit=async e=>{
     e.preventDefault();const title=$('#t').value.trim(),description=$('#d').value.trim();
     if(!title||!description){$('#err').textContent='Title and description are required.';return}
     $('#go').disabled=true;
-    try{const t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value,priorityId:+$('#p').value});toast('Ticket submitted.');go('ticket',{id:t.id,from:'tickets'})}
-    catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
+    let t;
+    try{t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value})}catch(e){$('#err').textContent=e.message;$('#go').disabled=false;return}
+    const failed=[];for(const f of files){try{await uploadFile(t.id,f)}catch(e){failed.push(e.message)}}
+    toast(failed.length?`Ticket submitted, but some files were not attached: ${failed.join(' ')}`:'Ticket submitted.');
+    go('ticket',{id:t.id,from:'tickets'})
   }
 }
 const FAQS=[
   ['How do I create a ticket?','Go to New Ticket, enter the issue details, choose a category and priority, then select Submit Ticket.'],
-  ['Which priority should I choose?','Use Low for minor issues, Medium for normal work problems, and High when the issue prevents you from working.'],
+  ['How is my ticket’s priority decided?','Every new ticket starts at Medium. After reviewing it, IT support raises it to High if the issue stops you from working, or lowers it to Low for minor issues.'],
   ['How do I check my ticket status?','Open My Tickets from the employee portal and select a ticket to view its current status and technician updates.'],
   ['What do the ticket statuses mean?','Open means the request is waiting for review. In Progress means a technician is working on it. Resolved means the issue has been fixed and the ticket is finished.'],
   ['What if I do not receive the 2FA code?','Wait a moment and select Resend Code. Make sure you can access your company email. If it still does not arrive, contact IT support.'],
@@ -451,12 +496,12 @@ async function assigned(){
 
 /* ── Ticket detail ──────────────────────────────────────────────────────── */
 async function ticket({id,from='tickets'}){
-  const [t,cm,h]=await Promise.all([api('/tickets/'+id),api(`/tickets/${id}/comments`),api(`/tickets/${id}/history`)]);
-  return me.role==='EMPLOYEE'?empTicket(t,cm,from):staffTicket(t,cm,h,from)
+  const [t,cm,h,at]=await Promise.all([api('/tickets/'+id),api(`/tickets/${id}/comments`),api(`/tickets/${id}/history`),api(`/tickets/${id}/attachments`)]);
+  return me.role==='EMPLOYEE'?empTicket(t,cm,at,from):staffTicket(t,cm,h,at,from)
 }
-function empTicket(t,cm,from){
+function empTicket(t,cm,at,from){
   const feed=[...cm.map(c=>({at:c.createdAt,who:c.author.id===me.id?'You':c.author.name,text:c.body})),
-    {at:t.createdAt,who:'You',text:`Submitted ticket with category ${t.category.name} and ${t.priority.name.toLowerCase()} priority.`}].sort((a,b)=>d(b.at)-d(a.at));
+    {at:t.createdAt,who:'You',text:`Submitted ticket with category ${t.category.name}.`}].sort((a,b)=>d(b.at)-d(a.at));
   shell(from,`<button class="back" id="bk" style="margin:0 0 10px">← Tickets</button>
   <div class="ph" style="margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line)"><div><h1>${esc(t.title)}</h1>
   <p style="font-size:12px">Ticket #${String(t.id).padStart(3,'0')} &nbsp;•&nbsp; ${esc(t.category.name)} &nbsp;•&nbsp; ${fDateY(t.createdAt)} &nbsp;•&nbsp; ${esc(t.assignee?.name||'Unassigned')}</p></div>
@@ -465,9 +510,11 @@ function empTicket(t,cm,from){
   <div class="card" style="padding:4px 22px 40px 6px">
     <h2 style="margin:6px 0 4px">Description</h2><p style="color:var(--body);white-space:pre-wrap;padding-bottom:36px;border-bottom:1px solid var(--line-2)">${esc(t.description)}</p>
     ${t.resolutionNotes?`<h2 style="margin:18px 0 4px">Resolution</h2><p style="color:var(--body);white-space:pre-wrap">${esc(t.resolutionNotes)}</p>`:''}
-    <h2 style="margin:22px 0 14px">Activity</h2>
+    <h2 style="margin:22px 0 12px">Attachments</h2>${attList(at)}${t.status!=='RESOLVED'?dropZone('tdrop'):''}
+    <h2 style="margin:26px 0 14px">Activity</h2>
     <div class="feed">${feed.map(f=>`<div class="it"><span class="dot"></span><div><div class="who2">${esc(f.who)} &nbsp;•&nbsp; ${fWhen(f.at)}</div><p>${esc(f.text)}</p></div></div>`).join('')}</div>
-    ${t.status!=='RESOLVED'?`<form class="inbox" id="cf" style="margin-top:24px"><input class="input" id="cb" placeholder="Add a comment or update..." aria-label="Add a comment"><span class="kbd">⌘ ↵</span></form>
+    ${t.status==='PENDING'?`<div class="secinfo" role="status" style="margin:24px 0 0;background:#fff7ed;border-color:#fed7aa"><b style="color:#9a3412">IT support is waiting for your reply</b><span>Answer the latest question above. Replying sends the ticket back to the technician.</span></div>`:''}
+    ${t.status!=='RESOLVED'?`<form class="inbox" id="cf" style="margin-top:${t.status==='PENDING'?14:24}px"><input class="input" id="cb" placeholder="${t.status==='PENDING'?'Reply to IT support...':'Add a comment or update...'}" aria-label="Add a comment"><span class="kbd">⌘ ↵</span></form>
     <p class="faint" style="font-size:11px;margin-top:8px">Comments are visible to the assigned technician.</p>`:''}
   </div>
   <div class="card props" style="padding:14px 16px 16px"><h2 style="font-size:15px;margin-bottom:6px">Properties</h2>
@@ -477,7 +524,7 @@ function empTicket(t,cm,from){
     <div class="pr"><span>Assignee</span><b>${esc(t.assignee?.name||'Unassigned')}</b></div>
     <div class="pr"><span>Created</span><b>${fDateY(t.createdAt)}</b></div>
     <button class="btn ghost sm" id="bt" style="width:100%;margin-top:8px">Back to tickets</button></div></div>`);
-  $('#bk').onclick=$('#bt').onclick=()=>go(from);
+  $('#bk').onclick=$('#bt').onclick=()=>go(from);bindTicketDrop(t,from);
   if($('#cf'))$('#cf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#cb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:'PUBLIC'});go('ticket',{id:t.id,from})})
 }
 function histText(x){
@@ -486,9 +533,12 @@ function histText(x){
   if(x.field==='status')return `${who} moved ticket to ${STATUS[x.newValue]||x.newValue}`;
   if(x.field==='assignee')return `${who} assigned ${x.newValue}`;
   if(x.field==='escalated')return `${who} escalated: ${x.newValue}`;
+  if(x.field==='attachment')return `${who} attached ${x.newValue}`;
+  if(x.field==='sla')return `SLA resumed after waiting on the employee; deadline moved ${dur(d(x.newValue)-d(x.oldValue))} later`;
+  if(x.field==='priority')return `${who} changed priority from ${x.oldValue} to ${x.newValue}`;
   return `${who} changed ${x.field}`
 }
-async function staffTicket(t,cm,h,from){
+async function staffTicket(t,cm,h,at,from){
   const admin=me.role==='ADMIN',open=t.status!=='RESOLVED',canWork=open&&(admin||t.assignee?.id===me.id);
   const techs=admin&&open?await api('/technicians'):[];
   const events=[...h.map(x=>({at:x.changedAt,text:histText(x)})).filter(x=>x.text),
@@ -504,6 +554,7 @@ async function staffTicket(t,cm,h,from){
       <div class="kv"><div><span>Submitted by</span><b>${esc(t.submitter.name)}</b></div><div><span>Category</span><b>${esc(t.category.name)}</b></div>
       <div><span>Created</span><b>${fDateY(t.createdAt)} · ${fTime(t.createdAt)}</b></div><div><span>SLA</span><b style="font-weight:700">${sla(t)}</b></div></div>
       <p style="font-size:12px;font-weight:700;margin-top:16px">Employee description</p><p style="color:var(--body);margin-top:6px;white-space:pre-wrap">${esc(t.description)}</p>
+      <p style="font-size:12px;font-weight:700;margin:18px 0 10px">Attachments</p>${attList(at)}${open?dropZone('tdrop'):''}
       ${t.escalationReason?`<p style="font-size:12px;font-weight:700;margin-top:16px">Escalated by ${esc(t.escalatedBy?.name||'')}</p><p style="color:#c2410c;margin-top:6px">${esc(t.escalationReason)}</p>`:''}</div>
     <div class="card pad" style="padding:20px 18px 22px"><h2 style="margin-left:38px">Resolution Notes</h2>
       <p class="sub" style="margin:4px 0 14px 38px">${open?'Document the fix or troubleshooting performed before resolving the ticket.':`Resolved ${fDateY(t.resolvedAt)} · ${fTime(t.resolvedAt)}`}</p>
@@ -513,27 +564,35 @@ async function staffTicket(t,cm,h,from){
     <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Workflow</h2>
       <label class="field" style="margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Status</span>
         <select class="input md" id="st" ${canWork&&stOpts.length>1?'':'disabled'}>${stOpts.map(s=>`<option value="${s}">${STATUS[s]}</option>`).join('')}</select></label>
+      ${canWork&&stOpts.includes('PENDING')&&t.status!=='PENDING'?`<label class="field" id="pqw" style="display:none;margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Question for the employee (required)</span>
+        <textarea class="input" id="pq" placeholder="What do you need from the employee?" style="min-height:64px;font-size:13px"></textarea>
+        <small class="muted" style="display:block;font-size:11px;margin-top:6px">Posted to the employee. The SLA timer pauses until they reply.</small></label>`:''}
       <label class="field" style="margin-bottom:14px"><span style="font-size:11.5px;margin-bottom:6px">Assigned technician</span>
         ${admin&&open?`<select class="input md" id="tc"><option value="">Unassigned</option>${techs.map(x=>`<option value="${x.id}" ${t.assignee?.id===x.id?'selected':''}>${esc(x.name)} (${x.activeTickets} active)</option>`).join('')}</select>`
         :`<div class="input md" style="display:flex;align-items:center;gap:10px">${t.assignee?`<span class="avatar" style="width:24px;height:24px;font-size:9px">${esc(initials(t.assignee.name))}</span>${esc(t.assignee.name)}`:'<span class="muted">Unassigned</span>'}</div>`}</label>
       <span style="display:block;font-size:11.5px;color:var(--body);margin-bottom:6px">Priority</span>
-      <div style="display:flex;gap:6px;margin-bottom:16px"><span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span><span class="pill" style="height:28px">SLA due ${dueTxt}</span></div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;align-items:center">${canWork
+        ?`<select class="input md" id="pr" aria-label="Priority" style="width:118px;height:34px;padding:0 30px 0 12px;font-size:13px">${prios.map(p=>`<option value="${p.id}" ${p.id===t.priority.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`
+        :`<span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span>`}<span class="pill" style="height:28px">${t.pausedAt?'SLA paused':'SLA due '+dueTxt}</span></div>
       ${canWork?'<button class="btn sm" id="sv" style="width:100%;height:36px">Save workflow update</button>':`<p class="muted" style="font-size:12px">${open?'Only the assigned technician or an admin can update this ticket.':'Resolved tickets are final.'}</p>`}</div>
     <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Activity</h2>
       <div class="timeline"><div class="ev"><time>${fTime(t.createdAt)}</time><div><b>Ticket created</b></div></div>
-      <p style="font-size:12px;color:var(--body);margin:2px 0 8px">Category: ${esc(t.category.name)} · Priority: ${esc(t.priority.name)}</p>
+      <p style="font-size:12px;color:var(--body);margin:2px 0 8px">Category: ${esc(t.category.name)} · Priority: ${esc(h.find(x=>x.field==='priority')?.oldValue||t.priority.name)}</p>
       ${events.map(e=>`<div class="line"><span class="dot"></span><div style="font-size:11.5px;color:var(--body)">${fWhen(e.at)}<div style="margin-top:4px">${esc(e.text)}</div></div></div>`).join('')}</div>
       <form id="nf" style="margin-top:14px"><div class="inbox"><textarea class="input" id="nb" placeholder="Add internal note..." style="min-height:40px;height:40px;padding:10px 60px 10px 10px" aria-label="Add a note"></textarea><span class="kbd" style="top:auto;bottom:10px">⌘ ↵</span></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><label style="font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center"><input type="checkbox" id="pub"> Visible to employee</label><button class="btn sm" style="height:28px;font-size:12px">Post note</button></div></form></div>
   </div></div>`);
-  const reload=()=>go('ticket',{id:t.id,from});
+  const reload=()=>go('ticket',{id:t.id,from});bindTicketDrop(t,from);
+  if($('#pqw'))$('#st').onchange=()=>{const on=$('#st').value==='PENDING';$('#pqw').style.display=on?'block':'none';if(on)$('#pq').focus()};
   $('#nf').onsubmit=safe(async e=>{e.preventDefault();const b=$('#nb').value.trim();if(!b)return;await api(`/tickets/${t.id}/comments`,'POST',{body:b,visibility:$('#pub').checked?'PUBLIC':'INTERNAL'});reload()});
   $('#nb').onkeydown=e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))$('#nf').requestSubmit()};
   if(!canWork)return;
   $('#sv').onclick=safe(async()=>{
-    const ns=$('#st').value,nt=$('#tc')?.value;let changed=false;
+    const ns=$('#st').value,nt=$('#tc')?.value,q=$('#pq')?.value.trim();let changed=false;
+    if(ns==='PENDING'&&ns!==t.status&&!q){$('#pq').focus();return toast('Write what you need from the employee before setting the ticket to Pending.')}
     if(nt&&+nt!==t.assignee?.id){await api(`/tickets/${t.id}/assign`,'POST',{technicianId:+nt});changed=true}
-    if(ns!==t.status){await api(`/tickets/${t.id}/status`,'POST',{status:ns});changed=true}
+    const np=+$('#pr').value;if(np!==t.priority.id){await api(`/tickets/${t.id}/priority`,'POST',{priorityId:np});changed=true}
+    if(ns!==t.status){await api(`/tickets/${t.id}/status`,'POST',{status:ns,question:q});changed=true}
     if(!changed)return toast('Nothing to update.');toast('Workflow updated.');reload()
   });
   $('#rs').onclick=safe(async()=>{const notes=$('#rn').value.trim();if(!notes){$('#rn').focus();return toast('Add resolution notes before resolving.')}
