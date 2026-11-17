@@ -335,7 +335,7 @@ const rowsClick=()=>$$('[data-t]').forEach(r=>r.onclick=()=>go('ticket',{id:+r.d
 /* Generic ticket table: cols is a list of column keys */
 const COLS={
   id:['Ticket',x=>`<td class="id">#${String(x.id).padStart(3,'0')}</td>`],
-  issue:['Issue',x=>`<td class="strong">${esc(x.title)}</td>`],
+  issue:['Issue',x=>`<td class="strong">${esc(x.title)}${x.escalationReason&&me.role!=='EMPLOYEE'&&x.status!=='RESOLVED'?'<span class="tag" title="Escalated for admin review">Escalated</span>':''}</td>`],
   emp:['Employee',x=>`<td>${esc(x.submitter.name)}</td>`],
   tech:['Technician',x=>`<td>${esc(x.assignee?.name||'Unassigned')}</td>`],
   cat:['Category',x=>`<td>${esc(x.category.name)}</td>`],
@@ -355,7 +355,7 @@ function bindFilters(id,draw,init={}){
   const vals=()=>Object.fromEntries($$(`#${id} [data-f]`).map(e=>[e.dataset.f,e.value.trim().toLowerCase()]));
   $$(`#${id} [data-f]`).forEach(e=>{if(init[e.dataset.f])e.value=init[e.dataset.f];e.oninput=()=>draw(vals())});draw(vals())
 }
-const matchT=(x,f)=>(!f.q||`#${x.id} ${x.id} ${x.title} ${x.submitter.name} ${x.assignee?.name||''} ${x.category.name}`.toLowerCase().includes(f.q))
+const matchT=(x,f)=>(!f.q||`#${x.id} ${x.id} ${x.title} ${x.submitter.name} ${x.assignee?.name||''} ${x.category.name} ${x.escalationReason?'escalated':''}`.toLowerCase().includes(f.q))
   &&(!f.status||x.status.toLowerCase()===f.status)&&(!f.prio||x.priority.name.toLowerCase()===f.prio);
 const STATUS_OPTS=Object.entries(STATUS);
 const prioOpts=()=>prios.map(p=>[p.name.toLowerCase(),p.name]);
@@ -377,13 +377,13 @@ function newTicket(){
     <label class="field"><span>Title</span><input class="input md" id="t" placeholder="Wi-Fi connection problem" maxlength="200"></label>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <label class="field"><span>Category</span><select class="input md" id="c">${cats.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
-      <label class="field"><span>Priority</span><select class="input md" id="p">${prios.map(p=>`<option value="${p.id}" ${p.name==='Medium'?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+      <div class="field"><span>Priority</span><div class="input md" style="display:flex;align-items:center;color:var(--muted);background:#f8fafc" aria-label="Priority is set by IT support">Set by IT support after review</div></div></div>
     <label class="field"><span>Description</span><textarea class="input" id="d" placeholder="Describe the problem and what you have already tried." maxlength="4000"></textarea></label>
     <div class="field" style="margin-bottom:16px"><span>Attachments (Optional)</span>
       <label class="drop" id="drop"><span style="font-size:18px">⇪</span>Drag &amp; drop or click to upload<br>JPEG/JPG or PNG or up to 10MB<input type="file" id="file" accept="image/png,image/jpeg" multiple hidden></label>
       <p class="muted" id="files" style="font-size:12px;margin-top:8px"></p></div>
     <p class="err" id="err" role="alert"></p>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span class="muted" style="font-size:11.5px">Required fields: Title, Category, Priority, Description</span><button class="btn" id="go">Submit Ticket</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span class="muted" style="font-size:11.5px">Required fields: Title, Category, Description</span><button class="btn" id="go">Submit Ticket</button></div>
   </form>
   <div class="card pad" style="padding:20px 18px 40px"><h2 style="font-size:15px;margin-bottom:14px">How it works</h2>
     <p class="muted" style="font-size:12.5px;line-height:1.35">1. Submit ticket<br>2. Technician reviews it<br>3. Status is updated<br>4. Ticket is resolved</p></div></div>`);
@@ -394,13 +394,13 @@ function newTicket(){
     e.preventDefault();const title=$('#t').value.trim(),description=$('#d').value.trim();
     if(!title||!description){$('#err').textContent='Title and description are required.';return}
     $('#go').disabled=true;
-    try{const t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value,priorityId:+$('#p').value});toast('Ticket submitted.');go('ticket',{id:t.id,from:'tickets'})}
+    try{const t=await api('/tickets','POST',{title,description,categoryId:+$('#c').value});toast('Ticket submitted.');go('ticket',{id:t.id,from:'tickets'})}
     catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
   }
 }
 const FAQS=[
   ['How do I create a ticket?','Go to New Ticket, enter the issue details, choose a category and priority, then select Submit Ticket.'],
-  ['Which priority should I choose?','Use Low for minor issues, Medium for normal work problems, and High when the issue prevents you from working.'],
+  ['How is my ticket’s priority decided?','Every new ticket starts at Medium. After reviewing it, IT support raises it to High if the issue stops you from working, or lowers it to Low for minor issues.'],
   ['How do I check my ticket status?','Open My Tickets from the employee portal and select a ticket to view its current status and technician updates.'],
   ['What do the ticket statuses mean?','Open means the request is waiting for review. In Progress means a technician is working on it. Resolved means the issue has been fixed and the ticket is finished.'],
   ['What if I do not receive the 2FA code?','Wait a moment and select Resend Code. Make sure you can access your company email. If it still does not arrive, contact IT support.'],
@@ -456,7 +456,7 @@ async function ticket({id,from='tickets'}){
 }
 function empTicket(t,cm,from){
   const feed=[...cm.map(c=>({at:c.createdAt,who:c.author.id===me.id?'You':c.author.name,text:c.body})),
-    {at:t.createdAt,who:'You',text:`Submitted ticket with category ${t.category.name} and ${t.priority.name.toLowerCase()} priority.`}].sort((a,b)=>d(b.at)-d(a.at));
+    {at:t.createdAt,who:'You',text:`Submitted ticket with category ${t.category.name}.`}].sort((a,b)=>d(b.at)-d(a.at));
   shell(from,`<button class="back" id="bk" style="margin:0 0 10px">← Tickets</button>
   <div class="ph" style="margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line)"><div><h1>${esc(t.title)}</h1>
   <p style="font-size:12px">Ticket #${String(t.id).padStart(3,'0')} &nbsp;•&nbsp; ${esc(t.category.name)} &nbsp;•&nbsp; ${fDateY(t.createdAt)} &nbsp;•&nbsp; ${esc(t.assignee?.name||'Unassigned')}</p></div>
@@ -486,6 +486,7 @@ function histText(x){
   if(x.field==='status')return `${who} moved ticket to ${STATUS[x.newValue]||x.newValue}`;
   if(x.field==='assignee')return `${who} assigned ${x.newValue}`;
   if(x.field==='escalated')return `${who} escalated: ${x.newValue}`;
+  if(x.field==='priority')return `${who} changed priority from ${x.oldValue} to ${x.newValue}`;
   return `${who} changed ${x.field}`
 }
 async function staffTicket(t,cm,h,from){
@@ -517,11 +518,13 @@ async function staffTicket(t,cm,h,from){
         ${admin&&open?`<select class="input md" id="tc"><option value="">Unassigned</option>${techs.map(x=>`<option value="${x.id}" ${t.assignee?.id===x.id?'selected':''}>${esc(x.name)} (${x.activeTickets} active)</option>`).join('')}</select>`
         :`<div class="input md" style="display:flex;align-items:center;gap:10px">${t.assignee?`<span class="avatar" style="width:24px;height:24px;font-size:9px">${esc(initials(t.assignee.name))}</span>${esc(t.assignee.name)}`:'<span class="muted">Unassigned</span>'}</div>`}</label>
       <span style="display:block;font-size:11.5px;color:var(--body);margin-bottom:6px">Priority</span>
-      <div style="display:flex;gap:6px;margin-bottom:16px"><span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span><span class="pill" style="height:28px">SLA due ${dueTxt}</span></div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;align-items:center">${canWork
+        ?`<select class="input md" id="pr" aria-label="Priority" style="width:118px;height:34px;padding:0 30px 0 12px;font-size:13px">${prios.map(p=>`<option value="${p.id}" ${p.id===t.priority.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`
+        :`<span class="pill p-${esc(t.priority.name)}" style="height:28px">${esc(t.priority.name)}</span>`}<span class="pill" style="height:28px">SLA due ${dueTxt}</span></div>
       ${canWork?'<button class="btn sm" id="sv" style="width:100%;height:36px">Save workflow update</button>':`<p class="muted" style="font-size:12px">${open?'Only the assigned technician or an admin can update this ticket.':'Resolved tickets are final.'}</p>`}</div>
     <div class="card" style="padding:16px 14px"><h2 style="margin-bottom:14px">Activity</h2>
       <div class="timeline"><div class="ev"><time>${fTime(t.createdAt)}</time><div><b>Ticket created</b></div></div>
-      <p style="font-size:12px;color:var(--body);margin:2px 0 8px">Category: ${esc(t.category.name)} · Priority: ${esc(t.priority.name)}</p>
+      <p style="font-size:12px;color:var(--body);margin:2px 0 8px">Category: ${esc(t.category.name)} · Priority: ${esc(h.find(x=>x.field==='priority')?.oldValue||t.priority.name)}</p>
       ${events.map(e=>`<div class="line"><span class="dot"></span><div style="font-size:11.5px;color:var(--body)">${fWhen(e.at)}<div style="margin-top:4px">${esc(e.text)}</div></div></div>`).join('')}</div>
       <form id="nf" style="margin-top:14px"><div class="inbox"><textarea class="input" id="nb" placeholder="Add internal note..." style="min-height:40px;height:40px;padding:10px 60px 10px 10px" aria-label="Add a note"></textarea><span class="kbd" style="top:auto;bottom:10px">⌘ ↵</span></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><label style="font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center"><input type="checkbox" id="pub"> Visible to employee</label><button class="btn sm" style="height:28px;font-size:12px">Post note</button></div></form></div>
@@ -533,6 +536,7 @@ async function staffTicket(t,cm,h,from){
   $('#sv').onclick=safe(async()=>{
     const ns=$('#st').value,nt=$('#tc')?.value;let changed=false;
     if(nt&&+nt!==t.assignee?.id){await api(`/tickets/${t.id}/assign`,'POST',{technicianId:+nt});changed=true}
+    const np=+$('#pr').value;if(np!==t.priority.id){await api(`/tickets/${t.id}/priority`,'POST',{priorityId:np});changed=true}
     if(ns!==t.status){await api(`/tickets/${t.id}/status`,'POST',{status:ns});changed=true}
     if(!changed)return toast('Nothing to update.');toast('Workflow updated.');reload()
   });

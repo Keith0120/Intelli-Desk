@@ -28,6 +28,8 @@ public class TicketService {
   public TicketService(TicketRepo t, CommentRepo c, HistoryRepo h, CategoryRepo ca, PriorityRepo p, UserRepo u) {
     tickets = t; comments = c; history = h; cats = ca; prios = p; users = u;
   }
+  /** Priority given to every new ticket. Employees cannot choose it; staff adjust it after triage. */
+  static final String DEFAULT_PRIORITY = "Medium";
   private static ResponseStatusException err(HttpStatus s, String m) { return new ResponseStatusException(s, m); }
   private static boolean blank(String s) { return s == null || s.isBlank(); }
   private void log(Ticket t, User by, String field, Object o, Object n) {
@@ -35,12 +37,14 @@ public class TicketService {
     h.oldValue = o == null ? null : o.toString(); h.newValue = n == null ? null : n.toString(); h.changedAt = Instant.now();
     history.save(h);
   }
-  public Ticket create(User u, String title, String desc, Long catId, Long prioId) {
+  /** Employees choose only the category; priority always starts at DEFAULT_PRIORITY (any priority sent by the client is ignored). */
+  public Ticket create(User u, String title, String desc, Long catId) {
     if (u.role != Role.EMPLOYEE) throw err(HttpStatus.FORBIDDEN, "Only employees submit tickets");
-    if (blank(title) || blank(desc) || catId == null || prioId == null) throw err(HttpStatus.BAD_REQUEST, "Title, category, priority and description are required");
+    if (blank(title) || blank(desc) || catId == null) throw err(HttpStatus.BAD_REQUEST, "Title, category and description are required");
     Ticket t = new Ticket(); t.title = title.trim(); t.description = desc.trim(); t.submitter = u; t.status = OPEN;
     t.category = cats.findById(catId).filter(c -> c.active).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown category"));
-    t.priority = prios.findById(prioId).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown priority"));
+    t.priority = prios.findByNameIgnoreCase(DEFAULT_PRIORITY).or(prios::findFirstByOrderByRankAsc)
+        .orElseThrow(() -> err(HttpStatus.INTERNAL_SERVER_ERROR, "No priority levels are configured"));
     t.createdAt = Instant.now(); t.dueAt = t.createdAt.plus(t.priority.resolutionHours, ChronoUnit.HOURS);
     tickets.save(t); log(t, u, "status", null, OPEN); return t;
   }
@@ -75,6 +79,14 @@ public class TicketService {
     if (allowed == null || !allowed.contains(to))
       throw err(HttpStatus.BAD_REQUEST, "Status change not allowed: " + t.status + " → " + to);
     log(t, u, "status", t.status, to); t.status = to; return t;
+  }
+  /** Assigned technician or admin re-prioritizes a ticket; the SLA deadline is recalculated from the creation time. */
+  public Ticket changePriority(User u, Long id, Long prioId) {
+    Ticket t = workable(u, id);
+    PriorityPolicy p = prios.findById(prioId == null ? -1L : prioId).orElseThrow(() -> err(HttpStatus.BAD_REQUEST, "Unknown priority"));
+    if (p.id.equals(t.priority.id)) return t;
+    log(t, u, "priority", t.priority.name, p.name);
+    t.priority = p; t.dueAt = t.createdAt.plus(p.resolutionHours, ChronoUnit.HOURS); return t;
   }
   public Ticket resolve(User u, Long id, String notes) {
     Ticket t = workable(u, id);

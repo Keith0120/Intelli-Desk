@@ -41,8 +41,8 @@ IT requests sent by email or in person are easy to lose, and nobody can see stat
 
 **Example: an employee clicks "Submit Ticket"**
 
-1. The front end sends title, description, category and priority.
-2. `TicketService.createTicket` checks the session and sets the submitter, the configured default status (initially `OPEN`), timestamps and `dueAt`.
+1. The front end sends title, description and category. Employees do not choose a priority.
+2. `TicketService.createTicket` checks the session and sets the submitter, the configured default status (initially `OPEN`), the default priority (`MEDIUM`), timestamps and `dueAt`.
 3. The database saves a `tickets` row and a `ticket_history` row together, in one transaction.
 4. The front end shows the new ticket.
 
@@ -63,7 +63,7 @@ IT requests sent by email or in person are easy to lose, and nobody can see stat
 - **submitter** (`User`, 1): the employee who opened the ticket. Always set.
 - **assignee** (`User`, 0..1): the technician. Empty until an admin assigns one.
 - **escalatedBy** (`User`, 0..1): who escalated the ticket, if anyone.
-- **Category and priority** are chosen manually by the employee.
+- **Category** is chosen by the employee. **Priority** always starts at `MEDIUM` so employees cannot over-prioritize; the assigned technician or an admin changes it after triage (`changePriority`), which recalculates `dueAt`.
 - **SLA deadline:** `dueAt = createdAt + resolutionHours`. Configurable; proposed `LOW` 48 h, `MEDIUM` 24 h, `HIGH` 4 h.
 
 ### Communication and history
@@ -124,9 +124,10 @@ Proposed rules for the main ticket operations. Every operation checks the signed
 
 | Operation | Screen action | Rule |
 | --- | --- | --- |
-| `createTicket` | Submit Ticket | Sets submitter, default status, timestamps, `dueAt` |
+| `createTicket` | Submit Ticket | Sets submitter, default status, default priority (`MEDIUM`), timestamps, `dueAt` |
 | `assign` | Assigned technician | Admins only; must be an active technician |
 | `changeStatus` | Save workflow update | Assigned technician or admin; allowed changes only |
+| `changePriority` | Save workflow update | Assigned technician or admin; recalculates `dueAt` from `createdAt` |
 | `resolve` | Resolve Ticket | Needs an assignee and resolution notes |
 | `escalate` | Escalate | Saves who, when and why; flags for admin review |
 
