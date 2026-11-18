@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "IntelliDesk (local database)",
+      "request": "launch",
+      "mainClass": "com.intellidesk.IntelliDeskApplication",
+      "projectName": "intellidesk",
+      "args": "--spring.profiles.active=h2",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

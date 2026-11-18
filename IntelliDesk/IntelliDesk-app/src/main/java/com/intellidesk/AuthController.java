@@ -1,71 +1,117 @@
 package com.intellidesk;
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import com.intellidesk.Enums.Role;
+
 @RestController @RequestMapping("/api/auth")
 public class AuthController {
-  record Login(String username, String password) {}
+  record Login(String username, String password, Role role) {}
   record Verify(String code) {}
-  private static final Logger log = LoggerFactory.getLogger(AuthController.class);
   private final UserRepo users; private final Auth auth;
-  private final BCryptPasswordEncoder enc;
-  private final SecureRandom rnd = new SecureRandom();
+  private final BCryptPasswordEncoder enc; private final AuthenticatorService authenticator;
   @Value("${intellidesk.two-factor:true}") private boolean twoFactor;
-  public AuthController(UserRepo users, Auth auth, BCryptPasswordEncoder enc) { this.users = users; this.auth = auth; this.enc = enc; }
-
+  public AuthController(UserRepo users, Auth auth, BCryptPasswordEncoder enc, AuthenticatorService authenticator) {
+    this.users = users; this.auth = auth; this.enc = enc; this.authenticator = authenticator;
+  }
+  @ModelAttribute
+  public void preventCaching(HttpServletResponse response) {
+    response.setHeader("Cache-Control", "no-store"); response.setHeader("Pragma", "no-cache");
+  }
+  private void clearPending(HttpSession session) {
+    for (String name : List.of("pendingUid", "challengeExp", "pendingSecret", "replaceAuthenticator",
+        "codeHash", "codeExp", "attempts")) session.removeAttribute(name);
+  }
+  private void signIn(User user, HttpSession session, HttpServletRequest request) {
+    clearPending(session); request.changeSessionId(); session.setAttribute(Auth.KEY, user.id);
+  }
+  private User pendingUser(HttpSession session) {
+    Long id = (Long) session.getAttribute("pendingUid");
+    Instant expiry = (Instant) session.getAttribute("challengeExp");
+    if (id == null || expiry == null || !Instant.now().isBefore(expiry)) {
+      clearPending(session); throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign-in expired. Enter your username and password again.");
+    }
+    return users.findById(id).filter(user -> user.active)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in again."));
+  }
+  private boolean needsSetup(User user, HttpSession session) {
+    return user.totpSecret == null || Boolean.TRUE.equals(session.getAttribute("replaceAuthenticator"));
+  }
+  private Map<String,Object> challenge(User user, HttpSession session) {
+    return Map.of("verified", false, "setupRequired", needsSetup(user, session), "username", user.email,
+        "role", user.role.name(), "method", "TOTP");
+  }
   @PostMapping("/login")
-  public Map<String,Object> login(@RequestBody Login b, HttpSession s) {
-    String username = b.username() == null ? "" : b.username().trim();
-    User found = users.findByEmailIgnoreCase(username).orElse(null);
-    if (found == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Username not found");
-    if (!found.active || b.password() == null || !enc.matches(b.password(), found.passwordHash))
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
-    User u = found;
-    if (!twoFactor) { s.setAttribute(Auth.KEY, u.id); return Map.of("verified", true); }
-    String code = String.format("%06d", rnd.nextInt(1_000_000));
-    s.setAttribute("pendingUid", u.id);
-    s.setAttribute("codeHash", enc.encode(code));
-    s.setAttribute("codeExp", Instant.now().plus(10, ChronoUnit.MINUTES));
-    s.setAttribute("attempts", 0);
-    log.info("[EmailGateway] verification code for {}: {}", u.email, code); // replace with a real mail sender
-    return Map.of("verified", false, "message", "Code sent to your email. It expires in 10 minutes.");
+  public Map<String,Object> login(@RequestBody Login body, HttpSession session, HttpServletRequest request) {
+    synchronized (session) {
+      session.removeAttribute(Auth.KEY); clearPending(session);
+      String username = body.username() == null ? "" : body.username().trim();
+      User user = users.findByEmailIgnoreCase(username).orElse(null);
+      if (user == null || !user.active || body.password() == null || !enc.matches(body.password(), user.passwordHash))
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect username or password, or the account is inactive.");
+      if (body.role() != null && body.role() != user.role)
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose " + user.role.name().toLowerCase(java.util.Locale.ROOT) + " as the role for this account.");
+      request.changeSessionId();
+      if (!twoFactor) { signIn(user, session, request); return Map.of("verified", true); }
+      session.setAttribute("pendingUid", user.id);
+      session.setAttribute("challengeExp", Instant.now().plusSeconds(600));
+      return challenge(user, session);
+    }
   }
-
+  @GetMapping("/challenge")
+  public Map<String,Object> currentChallenge(HttpSession session) {
+    synchronized (session) { return challenge(pendingUser(session), session); }
+  }
+  @GetMapping("/setup")
+  public Map<String,Object> setup(HttpSession session) {
+    synchronized (session) {
+      User user = pendingUser(session);
+      if (!needsSetup(user, session)) throw new ResponseStatusException(HttpStatus.CONFLICT, "This account already has an authenticator.");
+      String secret = (String) session.getAttribute("pendingSecret");
+      if (secret == null) { secret = Totp.newSecret(); session.setAttribute("pendingSecret", secret); }
+      String uri = Totp.uri(user.email, secret);
+      return Map.of("username", user.email, "secret", secret, "qrDataUrl", Totp.qrDataUrl(uri));
+    }
+  }
   @PostMapping("/verify")
-  public Map<String,Object> verify(@RequestBody Verify b, HttpSession s, HttpServletRequest req) {
-    Long uid = (Long) s.getAttribute("pendingUid");
-    if (uid == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in first");
-    int attempts = (int) s.getAttribute("attempts");
-    if (attempts >= 5 || Instant.now().isAfter((Instant) s.getAttribute("codeExp"))) {
-      s.invalidate(); throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Code expired. Sign in again.");
+  public Map<String,Object> verify(@RequestBody Verify body, HttpSession session, HttpServletRequest request) {
+    synchronized (session) {
+      User user = pendingUser(session); List<String> codes = List.of();
+      String code = body.code() == null ? "" : body.code().trim();
+      if (needsSetup(user, session)) {
+        String secret = (String) session.getAttribute("pendingSecret");
+        if (secret == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Open authenticator setup first.");
+        codes = authenticator.enroll(user.id, secret, code, Boolean.TRUE.equals(session.getAttribute("replaceAuthenticator")));
+      } else authenticator.verify(user.id, code);
+      signIn(user, session, request);
+      Map<String,Object> result = new LinkedHashMap<>(); result.put("verified", true);
+      if (!codes.isEmpty()) result.put("recoveryCodes", codes);
+      return result;
     }
-    if (b.code() == null || !enc.matches(b.code().trim(), (String) s.getAttribute("codeHash"))) {
-      s.setAttribute("attempts", attempts + 1);
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect code");
-    }
-    s.removeAttribute("pendingUid"); s.removeAttribute("codeHash");
-    s.removeAttribute("codeExp"); s.removeAttribute("attempts");
-    req.changeSessionId();
-    s.setAttribute(Auth.KEY, uid);
-    return Map.of("verified", true);
   }
-
-  @GetMapping("/me") public User me(HttpSession s) { return auth.current(s); }
-  @PostMapping("/logout") public void logout(HttpSession s) { s.invalidate(); }
+  /** A password plus one recovery code authorizes replacement enrollment, not an MFA-free session. */
+  @PostMapping("/recovery")
+  public Map<String,Object> recovery(@RequestBody Verify body, HttpSession session, HttpServletRequest request) {
+    synchronized (session) {
+      User user = pendingUser(session);
+      if (needsSetup(user, session)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Finish authenticator setup first.");
+      authenticator.consumeRecovery(user.id, body.code());
+      request.changeSessionId(); session.removeAttribute("pendingSecret");
+      session.setAttribute("replaceAuthenticator", true);
+      session.setAttribute("challengeExp", Instant.now().plusSeconds(600));
+      return challenge(user, session);
+    }
+  }
+  @GetMapping("/me") public User me(HttpSession session) { return auth.current(session); }
+  @PostMapping("/logout") public void logout(HttpSession session) { session.invalidate(); }
 }
