@@ -789,7 +789,7 @@ async function settings(){
   <div class="card pad" style="padding:14px 18px"><h2>Ticket Settings</h2><p class="sub" style="margin-bottom:6px">Default ticket configuration</p>
     ${set('Default Status','<span class="val">Open</span>')}${set('Priority Levels',`<span class="val">${prios.map(p=>esc(p.name)).join(', ')}</span>`)}${set('Ticket Categories',`<span class="val">${cats.map(c=>esc(c.name)).join(', ')}</span>`)}</div>
   <div class="card pad" style="padding:14px 18px"><h2>Authentication</h2><p class="sub" style="margin-bottom:6px">Sign-in and account security</p>
-    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access',tog('roleBasedAccess'))}</div></div>
+    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access','<span class="val">Always on</span>')}</div></div>
   <div class="card pad" style="margin-bottom:22px;padding:18px 24px"><h2>Notifications</h2><p class="sub" style="margin-bottom:6px">Control in-app ticket alerts</p>
     ${set('Ticket Update Alerts',tog('ticketUpdateAlerts'),'Show in-app notifications when tickets are created, assigned, updated, commented on or resolved.')}</div>
   <div class="card callout"><div><h3>Changes apply to the entire IntelliDesk system.</h3><p>Review settings before saving to avoid disrupting employee or technician access.</p></div></div>`);

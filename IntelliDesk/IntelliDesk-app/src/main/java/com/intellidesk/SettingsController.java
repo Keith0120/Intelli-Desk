@@ -12,7 +12,8 @@ import jakarta.servlet.http.HttpSession;
 @RestController @RequestMapping("/api/settings")
 public class SettingsController {
   static final String TICKET_ALERTS = "ticketUpdateAlerts";
-  static final List<String> KEYS = List.of("roleBasedAccess", TICKET_ALERTS);
+  /** Role-based access is not a setting: the server always enforces it. */
+  static final List<String> KEYS = List.of(TICKET_ALERTS);
   private final Auth auth; private final SystemSettingRepo repo;
   public SettingsController(Auth auth, SystemSettingRepo repo) { this.auth = auth; this.repo = repo; }
 
