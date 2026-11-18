@@ -215,6 +215,13 @@ table.t{width:100%;border-collapse:collapse}
   .filters{flex-wrap:wrap}.filters input{flex:1 1 100%}
   .main{margin:0;padding:24px 16px}.faq,.kv{grid-template-columns:1fr 1fr}.t{display:block;overflow-x:auto}.ph{flex-direction:column}
 }
+
+.auth-qr{display:block;width:240px;height:240px;max-width:100%;object-fit:contain;margin:18px auto;background:white;border-radius:10px}
+.auth-steps{font-size:13px;line-height:1.7;padding-left:20px;color:var(--body)}
+.manual-key{font-size:12px;color:var(--body);line-height:1.6}.manual-key summary{cursor:pointer;font-weight:600}.manual-key p{margin:10px 0}
+.manual-key code{display:block;overflow-wrap:anywhere;user-select:all;padding:10px;background:#f1f5f9;border-radius:8px}
+.recovery-codes{display:grid;gap:10px;background:#f8fafc;padding:14px;border-radius:10px;border:1px solid var(--line)}
+.recovery-codes code{font-size:12px;overflow-wrap:anywhere;user-select:all}.saved-codes{display:flex;align-items:center;gap:10px;font-size:13px;margin:6px 0 20px}
 </style>
 </head>
 <body>
@@ -300,48 +307,93 @@ function brand(sub){
   <div class="glass"><h2>IntelliDesk</h2><h3>Simple IT Help Desk System</h3><p>${sub}</p></div></div>`
 }
 function login(msg=''){
-  me=null;
+  me=null;pending=null;
   app.innerHTML=`<div class="auth"><div class="auth-left"><form class="auth-card" id="f" novalidate>
   <h1>Sign In</h1><p class="lead">Choose your role and use your company account.</p>
-  <label class="field"><span>Email</span><input class="input" id="u" placeholder="james.carter" autocomplete="username" required></label>
+  <label class="field"><span>Username or email</span><input class="input" id="u" placeholder="james.carter" autocomplete="username" required></label>
   <label class="field"><span>Password</span><input class="input" id="pw" type="password" placeholder="••••••••" autocomplete="current-password" required></label>
   <label class="field"><span>Role</span><select class="input" id="role"><option value="EMPLOYEE">Employee</option><option value="TECHNICIAN">Technician</option><option value="ADMIN">Administrator</option></select></label>
-  <p class="hint">A verification code is required after sign in.</p>
+  <p class="hint">Secure your account with Google Authenticator after sign in.</p>
   <p class="err" id="err" role="alert">${esc(msg)}</p>
   <button class="btn lg" id="go">Sign In</button>
-  <div class="demo">
-    <p>Employee: james.carter</p><p>Technician: marcus.webb</p><p>Admin: admin</p><p>Password for all: password</p></div>
+  <div class="demo"><p>Employee: james.carter</p><p>Technician: marcus.webb</p><p>Admin: admin</p><p>Password for all: password</p></div>
   </form></div>${brand('One secure sign-in for employees, technicians, and administrators.')}</div>`;
   $('#role').value=wantRole;
   $('#f').onsubmit=async e=>{
     e.preventDefault();const u=$('#u').value.trim(),pw=$('#pw').value;wantRole=$('#role').value;
-    if(!u||!pw){$('#err').textContent='Enter your email and password.';return}
+    if(!u||!pw){$('#err').textContent='Enter your username and password.';return}
     $('#go').disabled=true;
-    try{const r=await api('/auth/login','POST',{username:u,password:pw});pending={username:u,password:pw};r.verified?start():verify()}
+    try{const r=await api('/auth/login','POST',{username:u,password:pw,role:wantRole});
+      pending={username:r.username||u};r.verified?await start():r.setupRequired?await setupAuthenticator():verify()}
     catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
   }
 }
-function verify(){
+async function backToSignIn(){await api('/auth/logout','POST').catch(()=>{});login()}
+async function setupAuthenticator(){
+  let info;try{info=await api('/auth/setup')}catch(e){return login(e.message)}
   app.innerHTML=`<div class="auth"><div class="auth-left"><form class="auth-card" id="f" novalidate>
-  <h1 style="font-size:28px;letter-spacing:-.03em">Two-Factor Authentication</h1>
-  <p class="lead" style="margin:18px 0 34px">Enter the 6-digit code sent to your company email.</p>
-  <div class="secinfo"><b>Code sent to ${esc(pending?.username)}</b><span>The code expires in 10 minutes.</span></div>
-  <label class="field" style="margin-bottom:12px"><span>Verification Code</span><input class="input code" id="c" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••"></label>
-  <p class="err" id="err" role="alert"></p>
-  <button class="btn lg" id="go" style="margin-top:8px">Verify &amp; Continue</button>
-  <p class="authlinks">Didn’t receive a code? &nbsp;&nbsp;&nbsp;&nbsp;<button type="button" class="link" id="rs">Resend code</button></p>
+  <h1 style="font-size:28px">Set up Google Authenticator</h1>
+  <p class="lead" style="margin-bottom:18px">Link your phone to <b>${esc(info.username)}</b>.</p>
+  <ol class="auth-steps"><li>Open Google Authenticator on your phone.</li><li>Tap <b>+</b>, select <b>Scan a QR code</b>, and scan below.</li><li>Enter the six-digit code to finish setup.</li></ol>
+  <img class="auth-qr" id="qr" alt="Scan this IntelliDesk setup QR code with Google Authenticator" width="240" height="240">
+  <details class="manual-key"><summary>Can't scan? Enter a setup key</summary><p>Choose <b>Enter a setup key</b> in Authenticator. Account: <b>${esc(info.username)}</b>. Key type: <b>Time based</b>.</p><code id="setup-key"></code></details>
+  <label class="field" style="margin:18px 0 10px"><span>Authenticator code</span><input class="input code" id="c" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" required></label>
+  <p class="err" id="err" role="alert"></p><button class="btn lg" id="go">Confirm setup</button>
+  <p class="hint" style="margin-top:14px">This setup is only for this account. You will receive recovery codes after confirming.</p>
   <button type="button" class="back" id="bk">← Back to sign in</button>
-  </form></div>${brand('Secure sign in with a simple second verification step.')}</div>`;
-  $('#bk').onclick=()=>login();
+  </form></div>${brand('Your phone generates a fresh sign-in code every 30 seconds.')}</div>`;
+  $('#qr').src=info.qrDataUrl;$('#setup-key').textContent=info.secret;
+  $('#bk').onclick=backToSignIn;
   $('#c').oninput=e=>e.target.value=e.target.value.replace(/\D/g,'');
-  $('#rs').onclick=async()=>{try{await api('/auth/login','POST',pending);$('#err').textContent='';toast('A new code was sent.')}catch(e){$('#err').textContent=e.message}};
-  $('#f').onsubmit=async e=>{e.preventDefault();try{await api('/auth/verify','POST',{code:$('#c').value});start()}catch(e){$('#err').textContent=e.message}}
+  $('#f').onsubmit=async e=>{e.preventDefault();const code=$('#c').value;
+    if(!/^\d{6}$/.test(code)){$('#err').textContent='Enter the six-digit code from Google Authenticator.';return}
+    $('#go').disabled=true;
+    try{const r=await api('/auth/verify','POST',{code});showRecoveryCodes(r.recoveryCodes||[],info.username)}
+    catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
+  }
+}
+function showRecoveryCodes(codes,username){
+  app.innerHTML=`<div class="auth"><div class="auth-left"><div class="auth-card">
+  <h1 style="font-size:28px">Save your recovery codes</h1>
+  <p class="lead" style="margin-bottom:20px">Google Authenticator is ready for <b>${esc(username)}</b>.</p>
+  <p class="hint" style="margin-bottom:14px">Keep these codes somewhere private. Each code works once and lets you set up a replacement phone after entering your password. These codes are shown only now.</p>
+  <div class="recovery-codes">${codes.map(code=>`<code>${esc(code)}</code>`).join('')}</div>
+  <button type="button" class="btn ghost" id="save-codes" style="margin:16px 0">Download recovery codes</button>
+  <label class="saved-codes"><input type="checkbox" id="saved"> I have saved my recovery codes.</label>
+  <button type="button" class="btn lg" id="continue" disabled>Continue to IntelliDesk</button>
+  </div></div>${brand('Keep your recovery codes safe so you can regain access if you replace your phone.')}</div>`;
+  $('#saved').onchange=()=>$('#continue').disabled=!$('#saved').checked;
+  $('#continue').onclick=()=>{codes.fill('');start()};
+  $('#save-codes').onclick=()=>{
+    const text=`IntelliDesk recovery codes\nAccount: ${username}\n\n${codes.join('\n')}\n\nEach code works once. Keep these private and separate from your password.\n`;
+    const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));const a=document.createElement('a');
+    a.href=url;a.download='IntelliDesk_Recovery_'+username.replace(/[^a-zA-Z0-9._-]/g,'_')+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+  }
+}
+function verify(recovery=false){
+  app.innerHTML=`<div class="auth"><div class="auth-left"><form class="auth-card" id="f" novalidate>
+  <h1 style="font-size:28px">${recovery?'Use a recovery code':'Two-Factor Authentication'}</h1>
+  <p class="lead" style="margin:18px 0 24px">${recovery?'Enter one saved recovery code to link a replacement phone.':'Open Google Authenticator and enter the current six-digit code.'}</p>
+  <div class="secinfo" style="margin-bottom:24px"><b>IntelliDesk: ${esc(pending?.username)}</b><span>${recovery?'This code can be used only once.':'Codes refresh every 30 seconds. If you just used a code, wait for the next one.'}</span></div>
+  <label class="field"><span>${recovery?'Recovery code':'Authenticator code'}</span><input class="input ${recovery?'':'code'}" id="c" maxlength="${recovery?23:6}" ${recovery?'':'inputmode="numeric"'} autocomplete="one-time-code" placeholder="${recovery?'XXXXX-XXXXX-XXXXX-XXXXX':'••••••'}" required></label>
+  <p class="err" id="err" role="alert"></p><button class="btn lg" id="go">${recovery?'Set up replacement phone':'Verify &amp; Continue'}</button>
+  <p class="authlinks"><button type="button" class="link" id="switch">${recovery?'Use an Authenticator code instead':'Lost access to your phone? Use a recovery code'}</button></p>
+  <button type="button" class="back" id="bk">← Back to sign in</button>
+  </form></div>${brand('Secure sign in with a code from your authenticator app.')}</div>`;
+  $('#bk').onclick=backToSignIn;$('#switch').onclick=()=>verify(!recovery);
+  $('#c').oninput=e=>e.target.value=recovery?e.target.value.toUpperCase().replace(/[^A-F0-9-]/g,''):e.target.value.replace(/\D/g,'');
+  $('#f').onsubmit=async e=>{e.preventDefault();const code=$('#c').value.trim();
+    if(!recovery&&!/^\d{6}$/.test(code)){$('#err').textContent='Enter the six-digit code from Google Authenticator.';return}
+    if(recovery&&!/^[A-F0-9]{20}$/.test(code.replace(/-/g,''))){$('#err').textContent='Enter a complete recovery code.';return}
+    $('#go').disabled=true;
+    try{await api(recovery?'/auth/recovery':'/auth/verify','POST',{code});recovery?await setupAuthenticator():await start()}
+    catch(e){$('#err').textContent=e.message;$('#go').disabled=false}
+  }
 }
 async function start(){
-  try{me=await api('/auth/me')}catch{return login()}
-  if(pending&&me.role!==wantRole){
-    const role=ROLE_LABEL[me.role];await api('/auth/logout','POST').catch(()=>{});pending=null;wantRole=me.role;
-    return login(`This is ${/^[AEIOU]/.test(role)?'an':'a'} ${role} account. Choose “${role}” as the role and sign in again.`)
+  try{me=await api('/auth/me')}catch{
+    try{const r=await api('/auth/challenge');pending={username:r.username};wantRole=r.role;return r.setupRequired?await setupAuthenticator():verify()}
+    catch{return login()}
   }
   pending=null;[cats,prios]=await Promise.all([api('/categories'),api('/priorities')]);go('dash')
 }
@@ -444,11 +496,11 @@ function newTicket(){
   }
 }
 const FAQS=[
-  ['How do I create a ticket?','Go to New Ticket, enter the issue details, choose a category and priority, then select Submit Ticket.'],
+  ['How do I create a ticket?','Go to New Ticket, enter the issue details, choose a category, then select Submit Ticket. New tickets start at Medium priority; IT support adjusts it after review.'],
   ['How is my ticket’s priority decided?','Every new ticket starts at Medium. After reviewing it, IT support raises it to High if the issue stops you from working, or lowers it to Low for minor issues.'],
   ['How do I check my ticket status?','Open My Tickets from the employee portal and select a ticket to view its current status and technician updates.'],
   ['What do the ticket statuses mean?','Open means the request is waiting for review. In Progress means a technician is working on it. Resolved means the issue has been fixed and the ticket is finished.'],
-  ['What if I do not receive the 2FA code?','Wait a moment and select Resend Code. Make sure you can access your company email. If it still does not arrive, contact IT support.'],
+  ['How do I get my sign-in code?','Open Google Authenticator and use the current six-digit code for your IntelliDesk account. If you replace your phone, choose Use a recovery code after entering your password to link the new phone.'],
   ['What should I try before creating a ticket?','Restart the app or device, check your internet connection, and try the action again. If the problem continues, create a ticket.']];
 function faq(){
   shell('faq',head('Frequently Asked Questions','Quick answers to common questions before you submit a support ticket.')+
@@ -696,7 +748,7 @@ function settings(){
   <div class="card pad" style="padding:14px 18px"><h2>Ticket Settings</h2><p class="sub" style="margin-bottom:6px">Default ticket configuration</p>
     ${set('Default Status','<span class="val">Open</span>')}${set('Priority Levels',`<span class="val">${prios.map(p=>esc(p.name)).join(', ')}</span>`)}${set('Ticket Categories',`<span class="val">${cats.map(c=>esc(c.name)).join(', ')}</span>`)}</div>
   <div class="card pad" style="padding:14px 18px"><h2>Authentication</h2><p class="sub" style="margin-bottom:6px">Sign-in and account security</p>
-    ${set('Two-Factor Authentication',tog())}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access',tog())}</div></div>
+    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access',tog())}</div></div>
   <div class="card pad" style="margin-bottom:22px;padding:18px 24px"><h2>Notifications</h2><p class="sub" style="margin-bottom:6px">Control basic email and ticket alerts</p>
     ${set('Email Notifications',tog(),'Send email updates when ticket status changes.')}${set('Ticket Update Alerts',tog(),'Notify users when technicians add updates or resolve tickets.')}</div>
   <div class="card callout"><div><h3>Changes apply to the entire IntelliDesk system.</h3><p>Review settings before saving to avoid disrupting employee or technician access.</p></div></div>`);

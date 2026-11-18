@@ -11,4 +11,8 @@ public class User {
   @Enumerated(EnumType.STRING) @Column(nullable=false,length=20) public Role role;
   public boolean active = true;
   public Integer capacity;
+  @JsonIgnore @Column(length=512) public String totpSecret;
+  @JsonIgnore public Long totpLastStep;
+  @JsonIgnore public Integer totpFailures;
+  @JsonIgnore public java.time.Instant totpBlockedUntil;
 }
