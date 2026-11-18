@@ -11,7 +11,8 @@ import jakarta.servlet.http.HttpSession;
 /** Admin-only system preferences. Unknown keys are rejected; missing keys default to enabled. */
 @RestController @RequestMapping("/api/settings")
 public class SettingsController {
-  static final List<String> KEYS = List.of("roleBasedAccess", "emailNotifications", "ticketUpdateAlerts");
+  static final String TICKET_ALERTS = "ticketUpdateAlerts";
+  static final List<String> KEYS = List.of("roleBasedAccess", TICKET_ALERTS);
   private final Auth auth; private final SystemSettingRepo repo;
   public SettingsController(Auth auth, SystemSettingRepo repo) { this.auth = auth; this.repo = repo; }
 
