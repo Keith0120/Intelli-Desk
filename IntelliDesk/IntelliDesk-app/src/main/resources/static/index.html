@@ -204,6 +204,7 @@ table.t{width:100%;border-collapse:collapse}
 .bar .fill{position:absolute;left:0;right:0;bottom:0;border-radius:7px;background:#6366f1}
 .set{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line-2);font-size:13px;color:var(--body)}
 .set:first-of-type{border-top:0}.set small{display:block;font-size:11.5px;color:var(--muted)}
+.set select.setsel{width:auto;min-width:140px;height:36px;border-radius:10px;font-size:13px;padding:0 36px 0 12px;box-shadow:none;cursor:pointer;flex:none}
 .set .val{min-width:120px;height:36px;padding:0 12px;border:1px solid var(--field);border-radius:10px;display:flex;align-items:center;background:#fff;color:var(--ink-2)}
 .toggle{min-width:96px;justify-content:center;cursor:pointer}
 .callout{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 26px}
@@ -789,13 +790,13 @@ async function settings(){
   <div class="card pad" style="padding:14px 18px"><h2>Ticket Settings</h2><p class="sub" style="margin-bottom:6px">Default ticket configuration</p>
     ${set('Default Status','<span class="val">Open</span>')}${set('Priority Levels',`<span class="val">${prios.map(p=>esc(p.name)).join(', ')}</span>`)}${set('Ticket Categories',`<span class="val">${cats.map(c=>esc(c.name)).join(', ')}</span>`)}</div>
   <div class="card pad" style="padding:14px 18px"><h2>Authentication</h2><p class="sub" style="margin-bottom:6px">Sign-in and account security</p>
-    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access','<span class="val">Always on</span>')}</div></div>
+    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout',`<select class="input setsel" id="sto" aria-label="Session timeout">${(cur.sessionTimeoutChoices||[15,30,60,120]).map(n=>`<option value="${n}" ${n===cur.sessionTimeoutMinutes?'selected':''}>${n<60?n+' minutes':n/60+(n===60?' hour':' hours')}</option>`).join('')}</select>`,'Applies from each user’s next sign-in.')}${set('Role-Based Access','<span class="val">Always on</span>')}</div></div>
   <div class="card pad" style="margin-bottom:22px;padding:18px 24px"><h2>Notifications</h2><p class="sub" style="margin-bottom:6px">Control in-app ticket alerts</p>
     ${set('Ticket Update Alerts',tog('ticketUpdateAlerts'),'Show in-app notifications when tickets are created, assigned, updated, commented on or resolved.')}</div>
   <div class="card callout"><div><h3>Changes apply to the entire IntelliDesk system.</h3><p>Review settings before saving to avoid disrupting employee or technician access.</p></div></div>`);
   $$('.toggle').forEach(x=>x.onclick=x.onkeydown=e=>{if(e.type==='keydown'&&e.key!==' '&&e.key!=='Enter')return;e.preventDefault();const on=x.getAttribute('aria-checked')!=='true';
     x.setAttribute('aria-checked',on);x.textContent=on?'Enabled':'Disabled';x.classList.toggle('s-ok',on);x.classList.toggle('s-off',!on)});
-  $('#sv').onclick=safe(async()=>{const b=$('#sv'),body={};$$('.toggle[data-k]').forEach(x=>body[x.dataset.k]=x.getAttribute('aria-checked')==='true');
+  $('#sv').onclick=safe(async()=>{const b=$('#sv'),body={};$$('.toggle[data-k]').forEach(x=>body[x.dataset.k]=x.getAttribute('aria-checked')==='true');body.sessionTimeoutMinutes=+$('#sto').value;
     b.disabled=true;try{await api('/settings','PUT',body);toast('Settings saved.')}finally{b.disabled=false}})
 }
 
