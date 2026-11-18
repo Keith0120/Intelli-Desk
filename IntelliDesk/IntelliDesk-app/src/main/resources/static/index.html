@@ -739,22 +739,24 @@ async function techs(){
       <td style="text-align:right">${x.active?`<button class="btn danger sm" data-d="${x.id}">Deactivate</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="6" class="empty">No technicians match.</td></tr>'}</tbody></table>`;
     $$('[data-d]').forEach(b=>b.onclick=()=>deactivate(list.find(x=>x.id===+b.dataset.d),techs))})
 }
-/* Settings are shown read-only: the server has no settings API yet, so these mirror application.properties and seeded data. */
-function settings(){
-  const tog=(on=true)=>`<span class="pill toggle ${on?'s-ok':'s-off'}" role="switch" aria-checked="${on}" tabindex="0">${on?'Enabled':'Disabled'}</span>`;
+/* Toggles load from and save to /api/settings; the other values mirror application.properties and seeded data. */
+async function settings(){
+  const cur=await api('/settings');
+  const tog=k=>{const on=cur[k]!==false;return `<span class="pill toggle ${on?'s-ok':'s-off'}" data-k="${k}" role="switch" aria-checked="${on}" tabindex="0">${on?'Enabled':'Disabled'}</span>`};
   const set=(l,v,s='')=>`<div class="set"><div>${l}${s?`<small>${s}</small>`:''}</div>${v}</div>`;
   shell('settings',head('Settings','Configure basic IntelliDesk system preferences.','<button class="btn" id="sv">Save Changes</button>')+
   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px">
   <div class="card pad" style="padding:14px 18px"><h2>Ticket Settings</h2><p class="sub" style="margin-bottom:6px">Default ticket configuration</p>
     ${set('Default Status','<span class="val">Open</span>')}${set('Priority Levels',`<span class="val">${prios.map(p=>esc(p.name)).join(', ')}</span>`)}${set('Ticket Categories',`<span class="val">${cats.map(c=>esc(c.name)).join(', ')}</span>`)}</div>
   <div class="card pad" style="padding:14px 18px"><h2>Authentication</h2><p class="sub" style="margin-bottom:6px">Sign-in and account security</p>
-    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access',tog())}</div></div>
+    ${set('Two-Factor Authentication','<span class="val">Google Authenticator</span>')}${set('Session Timeout','<span class="val">30 minutes</span>')}${set('Role-Based Access',tog('roleBasedAccess'))}</div></div>
   <div class="card pad" style="margin-bottom:22px;padding:18px 24px"><h2>Notifications</h2><p class="sub" style="margin-bottom:6px">Control basic email and ticket alerts</p>
-    ${set('Email Notifications',tog(),'Send email updates when ticket status changes.')}${set('Ticket Update Alerts',tog(),'Notify users when technicians add updates or resolve tickets.')}</div>
+    ${set('Email Notifications',tog('emailNotifications'),'Send email updates when ticket status changes.')}${set('Ticket Update Alerts',tog('ticketUpdateAlerts'),'Notify users when technicians add updates or resolve tickets.')}</div>
   <div class="card callout"><div><h3>Changes apply to the entire IntelliDesk system.</h3><p>Review settings before saving to avoid disrupting employee or technician access.</p></div></div>`);
   $$('.toggle').forEach(x=>x.onclick=x.onkeydown=e=>{if(e.type==='keydown'&&e.key!==' '&&e.key!=='Enter')return;e.preventDefault();const on=x.getAttribute('aria-checked')!=='true';
     x.setAttribute('aria-checked',on);x.textContent=on?'Enabled':'Disabled';x.classList.toggle('s-ok',on);x.classList.toggle('s-off',!on)});
-  $('#sv').onclick=()=>toast('Settings can’t be saved yet: the server has no settings API. Values shown are the current defaults.')
+  $('#sv').onclick=safe(async()=>{const b=$('#sv'),body={};$$('.toggle[data-k]').forEach(x=>body[x.dataset.k]=x.getAttribute('aria-checked')==='true');
+    b.disabled=true;try{await api('/settings','PUT',body);toast('Settings saved.')}finally{b.disabled=false}})
 }
 
 start();
